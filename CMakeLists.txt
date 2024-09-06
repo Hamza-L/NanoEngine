@@ -1,19 +1,22 @@
 cmake_minimum_required(VERSION 3.17)
 
-project(NanoEngine)
-set(PROJECT_NAME NanoEngine)
+# must be set before project()
 set(CMAKE_CXX_STANDARD 17)
-
-set(ROOT_NAMESPACE NanoEngine)
+set(CMAKE_C_COMPILER clang)
+set(CMAKE_CXX_COMPILER clang++)
 set(CMAKE_VS_PLATFORM_NAME "x64")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 
+project(NanoEngine)
+set(PROJECT_NAME NanoEngine)
+set(ROOT_NAMESPACE NanoEngine)
 
 ################################################################################zZ
 # Source groups
 ################################################################################
 set(Headers
     "")
+
 source_group("Headers" FILES ${Headers})
 
 set(Sources
@@ -36,22 +39,17 @@ add_executable(${PROJECT_NAME} ${ALL_FILES})
 
 if(LINUX) # If the build is mac
     message("Starting the Linux Build")
-    set(VULKAN_SDK "")
 
-    # include directories
-    target_include_directories(${PROJECT_NAME} PUBLIC
-      ""
-    )
+target_include_directories(${PROJECT_NAME} PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/GLM"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/GFLW/linux/include")
 
-    # lib directories
     target_link_directories(${PROJECT_NAME} PRIVATE
-      ""
-    )
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/GFLW/linux/lib")
 
-    # library files
     set(ADDITIONAL_LIBRARY_DEPENDENCIES
-            ""
-    )
+            "libglfw3.a"
+            "libglfw3.a")
 endif ()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE "${ADDITIONAL_LIBRARY_DEPENDENCIES}")
