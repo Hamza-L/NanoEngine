@@ -13,12 +13,19 @@ set(ROOT_NAMESPACE NanoEngine)
 # Source groups
 ################################################################################
 set(Headers
-    "")
+    "src/NanoEngine.hpp"
+    "src/NanoWindow.hpp"
+    "src/NanoGraphics.hpp"
+)
 
 source_group("Headers" FILES ${Headers})
 
 set(Sources
-    "src/main.cpp")
+    "src/NanoEngine.cpp"
+    "src/NanoWindow.cpp"
+    "src/NanoGraphics.cpp"
+    "src/main.cpp"
+)
 
 source_group("Sources" FILES ${Sources})
 
@@ -39,6 +46,7 @@ if(WIN32)
     message("Starting the windows Build")
 
 target_include_directories(${PROJECT_NAME} PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/GLM"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/GFLW/win/include"
         "$ENV{VULKAN_SDK}/Include")
@@ -54,6 +62,7 @@ elseif(LINUX)
     message("Starting the Linux Build")
 
 target_include_directories(${PROJECT_NAME} PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/GLM"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/GFLW/linux/include")
 
