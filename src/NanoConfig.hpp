@@ -4,7 +4,7 @@
 #include <cstdint>
 
 constexpr uint16_t WINDOW_WIDTH = 800;
-constexpr uint16_t WINDOW_HEIGHT = 800;
+constexpr uint16_t WINDOW_HEIGHT = 600;
 constexpr const char* APP_NAME = "NanoApplication";
 constexpr const char* ENGINE_NAME = "NanoEngine";
 

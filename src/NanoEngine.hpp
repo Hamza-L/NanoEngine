@@ -7,8 +7,14 @@
 
 class NanoEngine {
   public:
+    NanoEngine() = default;
+    ~NanoEngine();
+    NanoEngine(const NanoEngine &other) = default;
+    NanoEngine(NanoEngine &&other) = default;
+    NanoEngine &operator=(const NanoEngine &other) = default;
     ERR Init();
     ERR Run();
+    ERR CleanUp();
 
   private:
     ERR MainLoop();

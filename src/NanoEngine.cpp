@@ -1,5 +1,16 @@
 #include "NanoEngine.hpp"
 
+NanoEngine::~NanoEngine(){
+    CleanUp();
+}
+
+ERR NanoEngine::CleanUp(){
+    ERR err = ERR::OK;
+    m_NGraphics.CleanUp();
+    m_NWindow.CleanUp();
+    return err;
+}
+
 ERR NanoEngine::Init(){
     ERR err = ERR::OK;
     err = m_NWindow.Init();

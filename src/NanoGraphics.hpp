@@ -7,6 +7,7 @@
 class NanoGraphics{
     public:
         ERR Init();
+        ERR CleanUp();
     private:
 };
 
