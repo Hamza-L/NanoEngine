@@ -16,6 +16,7 @@ set(Headers
     "src/NanoEngine.hpp"
     "src/NanoWindow.hpp"
     "src/NanoGraphics.hpp"
+    "src/NanoError.hpp"
 )
 
 source_group("Headers" FILES ${Headers})

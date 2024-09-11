@@ -1,8 +1,13 @@
 #ifndef NANOGRAPHICS_H_
 #define NANOGRAPHICS_H_
 
-class NanoGraphics{
+#include <vulkan/vulkan_core.h>
+#include "NanoError.hpp"
 
+class NanoGraphics{
+    public:
+        ERR Init();
+    private:
 };
 
 #endif // NANOGRAPHICS_H_

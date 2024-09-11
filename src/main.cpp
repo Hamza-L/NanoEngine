@@ -1,18 +1,17 @@
-#include "glm/vec4.hpp"
-#include "glm/mat4x4.hpp"
-
+#include <cstdlib>
 #include <iostream>
 
-int main(int argc, char *argv[]){
-    // uint32_t extensionCount = 0;
-    // vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-    // std::cout<< extensionCount << " extensions supported\n" << std::endl;
+#include "NanoEngine.hpp"
 
-    // glm::mat4 matrix;
-    // glm::vec4 vec;
-    // auto test = matrix * vec;
+int main(int argc, char *argv[]) {
+    NanoEngine engine;
+    try {
+        engine.Init();
+        engine.Run();
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
 
-
-
-    return 0;
+    return EXIT_SUCCESS;
 }
