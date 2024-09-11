@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.17)
 
 # must be set before project()
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_C_COMPILER clang)
-set(CMAKE_CXX_COMPILER clang++)
 set(CMAKE_VS_PLATFORM_NAME "x64")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 
@@ -37,7 +35,22 @@ add_executable(${PROJECT_NAME} ${ALL_FILES})
 # Include directories and Dependencies
 ################################################################################
 
-if(LINUX) # If the build is mac
+if(WIN32)
+    message("Starting the windows Build")
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/GLM"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/GFLW/win/include"
+        "$ENV{VULKAN_SDK}/Include")
+
+    target_link_directories(${PROJECT_NAME} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/GFLW/win/lib-vc2022"
+        "$ENV{VULKAN_SDK}/Lib")
+
+    set(ADDITIONAL_LIBRARY_DEPENDENCIES
+        "glfw3.lib"
+        "vulkan-1.lib")
+elseif(LINUX)
     message("Starting the Linux Build")
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -48,7 +61,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/external/GFLW/linux/lib")
 
     set(ADDITIONAL_LIBRARY_DEPENDENCIES
-            "libglfw3.a"
             "libglfw3.a")
 endif ()
 
