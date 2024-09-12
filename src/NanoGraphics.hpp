@@ -2,7 +2,7 @@
 #define NANOGRAPHICS_H_
 
 #include <vulkan/vulkan_core.h>
-#include "NanoError.hpp"
+#include "NanoLogger.hpp"
 
 class NanoGraphics{
     public:

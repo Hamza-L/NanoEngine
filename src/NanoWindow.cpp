@@ -1,6 +1,6 @@
 #include "NanoWindow.hpp"
 #include "GLFW/glfw3.h"
-#include "NanoError.hpp"
+#include "NanoLogger.hpp"
 #include "NanoConfig.hpp"
 
 ERR NanoWindow::Init(const int32_t width, const int32_t height, bool forceReInit){

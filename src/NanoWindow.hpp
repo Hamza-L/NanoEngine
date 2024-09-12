@@ -5,7 +5,7 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdint>
-#include "NanoError.hpp"
+#include "NanoLogger.hpp"
 
 class NanoWindow {
   public:

@@ -18,6 +18,8 @@ set(Headers
     "src/NanoWindow.hpp"
     "src/NanoGraphics.hpp"
     "src/NanoError.hpp"
+    "src/NanoUtility.hpp"
+    "src/NanoLogger.hpp"
 )
 
 source_group("Headers" FILES ${Headers})
@@ -26,6 +28,7 @@ set(Sources
     "src/NanoEngine.cpp"
     "src/NanoWindow.cpp"
     "src/NanoGraphics.cpp"
+    "src/NanoLogger.cpp"
     "src/main.cpp"
 )
 
