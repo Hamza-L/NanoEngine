@@ -2,8 +2,11 @@
 #define NANOUTILITY_H_
 
 #include <cstdio>
+#include <NanoError.hpp>
 
 #define PRINTFLUSH(content, ...) printf(content, __VA_ARGS__); fflush(stdout)
+
+#define VK_CHECK_THROW(func, msg) if(func != VK_SUCCESS){throw std::runtime_error(msg);}
 
 namespace Utility{
 

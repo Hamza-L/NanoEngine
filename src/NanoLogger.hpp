@@ -11,10 +11,11 @@
 #include <vector>
 
 #define LOG_SCOPED(level, ...)                                                                                                                       \
-    Logger::get_instance()->Log((level), __FILE__, __LINE__, __func__, __VA_ARGS__);                                                                 \
+    Logger::get_instance()->LogVerbose((level), __FILE__, __LINE__, __func__, __VA_ARGS__);                                                                 \
     ScopeTracker tracker { level }
 
-#define LOG_MSG(level, ...) Logger::get_instance()->Log((level), __FILE__, __LINE__, __func__, __VA_ARGS__);
+#define LOG_MSG_VERBOSE(level, ...) Logger::get_instance()->LogVerbose((level), __FILE__, __LINE__, __func__, __VA_ARGS__);
+#define LOG_MSG(level, ...) Logger::get_instance()->Log((level), __VA_ARGS__);
 
 #define LOG_VAR(level, variable) Logger::get_instance()->LogVar((level), #variable ": %s", Logger::ToString(variable).c_str())
 
@@ -79,7 +80,8 @@ class Logger { // singleton
         return ss.str();
     }
 
-    static void Log(ERRLevel messageSeverity, const char *fileName, const int lineNumber, const char *func, const char *fmt, ...);
+    static void Log(ERRLevel messageSeverity, const char *fmt, ...);
+    static void LogVerbose(ERRLevel messageSeverity, const char *fileName, const int lineNumber, const char *func, const char *fmt, ...);
     static void LogVar(ERRLevel messageSeverity, const char *fmt, ...);
 
     void operator=(const Logger &) = delete;

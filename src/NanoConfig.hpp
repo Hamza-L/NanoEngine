@@ -16,8 +16,7 @@ constexpr bool enableValidationLayers = true;
 #endif
 
 constexpr const char* desiredValidationLayers[] = {
-"test",
-"test2",
+"VK_LAYER_KHRONOS_validation",
 NULL //to allow for while loops without crash
 };
 
