@@ -14,7 +14,11 @@
 #include <map>
 
 struct QueueFamilyIndices {
-    uint32_t graphicsFamily;
+    int32_t graphicsFamily = -1;
+
+    bool IsValid(){ //helper function to validate queue indices
+        return graphicsFamily != -1;
+    }
 };
 
 struct NanoVKContext{
@@ -22,6 +26,8 @@ struct NanoVKContext{
     VkDebugUtilsMessengerEXT debugMessenger;
     VkPhysicalDevice physicalDevice;
     struct QueueFamilyIndices queueIndices;
+    VkDevice device;
+    VkQueue graphicsQueue;
 } _NanoContext;
 
 // We have to look up the address of the debug callback create function ourselves using vkGetInstanceProcAddr
@@ -93,6 +99,9 @@ static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT 
 
 ERR NanoGraphics::CleanUp(){
     ERR err = ERR::OK;
+
+    vkDestroyDevice(_NanoContext.device, nullptr);
+
     if (enableValidationLayers) {
         DestroyDebugUtilsMessengerEXT(_NanoContext.instance, _NanoContext.debugMessenger, nullptr);
     }
@@ -231,6 +240,26 @@ static ERR setupDebugMessenger(VkInstance& instance, VkDebugUtilsMessengerEXT& d
     return ERR::OK;//this is never reached if we use try/catch.
 }
 
+ERR findQueueFamilies(VkPhysicalDevice device, QueueFamilyIndices& indices) {
+    ERR err = ERR::NOT_FOUND;
+    // Logic to find queue family indices to populate struct with
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    for (int i = 0; i < queueFamilies.size(); i++) {
+        if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            indices.graphicsFamily = i;
+            err = ERR::OK;
+        }
+    }
+
+    return err;
+}
+
 int rateDeviceSuitability(VkPhysicalDevice device) {
     VkPhysicalDeviceProperties deviceProperties;
     vkGetPhysicalDeviceProperties(device, &deviceProperties);
@@ -292,19 +321,62 @@ static ERR pickPhysicalDevice(VkInstance& instance, VkPhysicalDevice& physicalDe
         throw std::runtime_error("failed to find a suitable GPU!");
     }
 
+    if(ERR::NOT_FOUND == findQueueFamilies(physicalDevice, _NanoContext.queueIndices)){
+        err = ERR::NOT_FOUND;
+        throw std::runtime_error("failed to find a graphics familiy queue!");
+    }
+
     return ERR::OK;//this is never reached if we use try/catch.
 }
 
-QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
-    QueueFamilyIndices indices;
-    // Logic to find queue family indices to populate struct with
-    return indices;
+ERR createLogicalDevice(VkPhysicalDevice& physicalDevice, QueueFamilyIndices& indices, VkDevice& device, VkQueue& graphicsQueue) {
+    ERR err = ERR::OK;
+
+    if(!indices.IsValid() && ERR::NOT_FOUND == findQueueFamilies(_NanoContext.physicalDevice, indices)){
+        throw std::runtime_error("failed to find a graphics familiy queue!");
+    }
+
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
+    queueCreateInfo.queueCount = 1;
+
+    float queuePriority = 1.0f;
+    queueCreateInfo.pQueuePriorities = &queuePriority;
+
+    VkPhysicalDeviceFeatures deviceFeatures{}; // defaults all the features to false for now
+
+    VkDeviceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.pQueueCreateInfos = &queueCreateInfo;
+    createInfo.queueCreateInfoCount = 1;
+
+    createInfo.pEnabledFeatures = &deviceFeatures;
+
+    createInfo.enabledExtensionCount = 0;// no device specific extensions for now
+    createInfo.ppEnabledExtensionNames = nullptr;
+    if (enableValidationLayers) {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(Utility::SizeOf(desiredValidationLayers));
+        createInfo.ppEnabledLayerNames = desiredValidationLayers;
+    } else {
+        createInfo.enabledLayerCount = 0;
+    }
+
+    if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create logical device!");
+    }
+
+    if(indices.IsValid())
+        vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue); //The graphics queue is already created if we have successfully created a logical device. This is only to retrieve the handle
+
+    return err;
 }
 
 ERR NanoGraphics::Init(){
     ERR err = ERR::OK;
-    err = createInstance(_NanoContext.instance, APP_NAME, ENGINE_NAME);
-    err = setupDebugMessenger(_NanoContext.instance, _NanoContext.debugMessenger);
-    err = pickPhysicalDevice(_NanoContext.instance, _NanoContext.physicalDevice);
+    err = createInstance(_NanoContext.instance, APP_NAME, ENGINE_NAME); // APP_NAME and ENGINE_NAME is defined in NanoConfig
+    err = setupDebugMessenger(_NanoContext.instance, _NanoContext.debugMessenger); // this depends on whether we are running in debug or not
+    err = pickPhysicalDevice(_NanoContext.instance, _NanoContext.physicalDevice); // physical device is not created but picked based on scores dictated by the number of supported features
+    err = createLogicalDevice(_NanoContext.physicalDevice, _NanoContext.queueIndices, _NanoContext.device, _NanoContext.graphicsQueue); // Logical device *is* created and therefore has to be destroyed
     return err;
 }
