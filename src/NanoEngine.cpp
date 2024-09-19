@@ -6,22 +6,22 @@ NanoEngine::~NanoEngine(){
 
 ERR NanoEngine::CleanUp(){
     ERR err = ERR::OK;
-    m_NGraphics.CleanUp();
-    m_NWindow.CleanUp();
+    m_NanoGraphics.CleanUp();
+    m_NanoWindow.CleanUp();
     return err;
 }
 
 ERR NanoEngine::Init(){
     ERR err = ERR::OK;
-    err = m_NWindow.Init();
-    err = m_NGraphics.Init();
+    err = m_NanoWindow.Init();
+    err = m_NanoGraphics.Init(m_NanoWindow);
     return err;
 }
 
 ERR NanoEngine::Run(){
     ERR err = ERR::OK;
-    while(!m_NWindow.ShouldWindowClose()){
-        m_NWindow.PollEvents();
+    while(!m_NanoWindow.ShouldWindowClose()){
+        m_NanoWindow.PollEvents();
 
         MainLoop();
 

@@ -1,9 +1,11 @@
 #include "NanoGraphics.hpp"
+#include "NanoWindow.hpp"
 #include "NanoConfig.hpp"
 #include "NanoError.hpp"
 #include "NanoUtility.hpp"
 #include "NanoLogger.hpp"
 #include "vulkan/vulkan_core.h"
+#include <cstdint>
 #include <stdio.h>
 
 #define GLFW_INCLUDE_VULKAN
@@ -12,12 +14,14 @@
 #include <vector>
 #include <iostream>
 #include <map>
+#include <set>
 
 struct QueueFamilyIndices {
     int32_t graphicsFamily = -1;
+    int32_t presentFamily = -1;
 
     bool IsValid(){ //helper function to validate queue indices
-        return graphicsFamily != -1;
+        return graphicsFamily != -1 && presentFamily != -1;
     }
 };
 
@@ -28,6 +32,8 @@ struct NanoVKContext{
     struct QueueFamilyIndices queueIndices;
     VkDevice device;
     VkQueue graphicsQueue;
+    VkQueue presentQueue;
+    VkSurfaceKHR surface;
 } _NanoContext;
 
 // We have to look up the address of the debug callback create function ourselves using vkGetInstanceProcAddr
@@ -67,7 +73,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
         messageLevel = ERRLevel::WARNING;
         break;
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-        messageLevel = ERRLevel::ERROR;
+        messageLevel = ERRLevel::FATAL;
         break;
     default:
         messageLevel = ERRLevel::INFO;
@@ -100,9 +106,11 @@ static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT 
 ERR NanoGraphics::CleanUp(){
     ERR err = ERR::OK;
 
+    vkDestroySurfaceKHR(_NanoContext.instance, _NanoContext.surface, nullptr);
+
     vkDestroyDevice(_NanoContext.device, nullptr);
 
-    if (enableValidationLayers) {
+    if (Config::enableValidationLayers) {
         DestroyDebugUtilsMessengerEXT(_NanoContext.instance, _NanoContext.debugMessenger, nullptr);
     }
 
@@ -152,7 +160,7 @@ static std::vector<const char*> getRequiredInstanceExtensions(){
     instanceExtensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 #endif
 
-    if (enableValidationLayers) {
+    if (Config::enableValidationLayers) {
         instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
@@ -181,8 +189,8 @@ static std::vector<VkExtensionProperties>& getSupportedInstanceExtensions(std::v
 static ERR createInstance(VkInstance& instance, const char* applicationName, const char* engineName) {
     ERR err = ERR::OK;
 
-    if (enableValidationLayers && !checkValidationLayerSupport(desiredValidationLayers)) {
-        LOG_MSG( ERRLevel::FATAL, "Number of Desired Layers %zu\n", Utility::SizeOf(desiredValidationLayers));
+    if (Config::enableValidationLayers && !checkValidationLayerSupport(Config::desiredValidationLayers)) {
+        LOG_MSG( ERRLevel::FATAL, "Number of Desired Layers %zu\n", Utility::SizeOf(Config::desiredValidationLayers));
         throw std::runtime_error("validation layers requested, but not available!");
     }
 
@@ -209,9 +217,9 @@ static ERR createInstance(VkInstance& instance, const char* applicationName, con
     createInfo.ppEnabledExtensionNames = instanceExtensions.data();
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-    if (enableValidationLayers) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(Utility::SizeOf(desiredValidationLayers));
-        createInfo.ppEnabledLayerNames = desiredValidationLayers;
+    if (Config::enableValidationLayers) {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(Utility::SizeOf(Config::desiredValidationLayers));
+        createInfo.ppEnabledLayerNames = Config::desiredValidationLayers;
 
         populateDebugMessengerCreateInfo(debugCreateInfo);
         createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debugCreateInfo;
@@ -230,7 +238,7 @@ static ERR createInstance(VkInstance& instance, const char* applicationName, con
 static ERR setupDebugMessenger(VkInstance& instance, VkDebugUtilsMessengerEXT& debugMessenger){
     ERR err = ERR::OK;
 
-    if(!enableValidationLayers){
+    if(!Config::enableValidationLayers){
         return ERR::OK;
     }
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
@@ -253,10 +261,41 @@ ERR findQueueFamilies(VkPhysicalDevice device, QueueFamilyIndices& indices) {
     for (int i = 0; i < queueFamilies.size(); i++) {
         if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indices.graphicsFamily = i;
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, _NanoContext.surface, &presentSupport);
+            if(presentSupport)
+                indices.presentFamily = i;
+        }
+
+        if(indices.IsValid()){
             err = ERR::OK;
+            return err;
         }
     }
 
+    return err;
+}
+
+ERR checkDeviceExtensionSupport(VkPhysicalDevice device) {
+    ERR err = ERR::OK;
+    uint32_t extensionCount;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+    std::set<const char*> requiredExtensions{};
+    int extIdx = 0;
+    while(Config::deviceExtensions[extIdx]){
+        requiredExtensions.emplace(Config::deviceExtensions[extIdx]);
+    }
+
+    // make sure we go through all the list of desiredExtensions and "check off" all of them
+    for (const auto& extension : availableExtensions) {
+        requiredExtensions.erase(extension.extensionName);
+    }
+
+    err = requiredExtensions.empty() ? ERR::OK : ERR::NOT_FOUND;
     return err;
 }
 
@@ -329,35 +368,42 @@ static ERR pickPhysicalDevice(VkInstance& instance, VkPhysicalDevice& physicalDe
     return ERR::OK;//this is never reached if we use try/catch.
 }
 
-ERR createLogicalDevice(VkPhysicalDevice& physicalDevice, QueueFamilyIndices& indices, VkDevice& device, VkQueue& graphicsQueue) {
+ERR createLogicalDevice(VkPhysicalDevice& physicalDevice, QueueFamilyIndices& indices, VkDevice& device, VkQueue& graphicsQueue, VkQueue& presentQueue) {
     ERR err = ERR::OK;
 
     if(!indices.IsValid() && ERR::NOT_FOUND == findQueueFamilies(_NanoContext.physicalDevice, indices)){
         throw std::runtime_error("failed to find a graphics familiy queue!");
     }
 
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
-    queueCreateInfo.queueCount = 1;
+    // we know both the graphics and present indices are valid, so we don't need to worry about checking it again here
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::set<int32_t> uniqueQueueFamilies = {indices.graphicsFamily, indices.presentFamily};
 
     float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
-
-    VkPhysicalDeviceFeatures deviceFeatures{}; // defaults all the features to false for now
+    for (uint32_t queueFamily : uniqueQueueFamilies) {
+        if(queueFamily == -1)
+            continue;
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = queueFamily;
+        queueCreateInfo.queueCount = 1;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfos.push_back(queueCreateInfo);
+    }
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.queueCreateInfoCount = 1;
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
+    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
 
+    VkPhysicalDeviceFeatures deviceFeatures{}; // defaults all the features to false for now
     createInfo.pEnabledFeatures = &deviceFeatures;
 
-    createInfo.enabledExtensionCount = 0;// no device specific extensions for now
-    createInfo.ppEnabledExtensionNames = nullptr;
-    if (enableValidationLayers) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(Utility::SizeOf(desiredValidationLayers));
-        createInfo.ppEnabledLayerNames = desiredValidationLayers;
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(Utility::SizeOf(Config::desiredValidationLayers));
+    createInfo.ppEnabledExtensionNames = Config::deviceExtensions;
+    if (Config::enableValidationLayers) {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(Utility::SizeOf(Config::desiredValidationLayers));
+        createInfo.ppEnabledLayerNames = Config::desiredValidationLayers;
     } else {
         createInfo.enabledLayerCount = 0;
     }
@@ -366,17 +412,37 @@ ERR createLogicalDevice(VkPhysicalDevice& physicalDevice, QueueFamilyIndices& in
         throw std::runtime_error("failed to create logical device!");
     }
 
-    if(indices.IsValid())
+    if(indices.IsValid()){
         vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue); //The graphics queue is already created if we have successfully created a logical device. This is only to retrieve the handle
+        vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue); //The graphics queue is already created if we have successfully created a logical device. This is only to retrieve the handle
+    }
 
     return err;
 }
 
-ERR NanoGraphics::Init(){
+ERR createSurface(VkInstance instance, GLFWwindow* window, VkSurfaceKHR& surface){
     ERR err = ERR::OK;
-    err = createInstance(_NanoContext.instance, APP_NAME, ENGINE_NAME); // APP_NAME and ENGINE_NAME is defined in NanoConfig
+
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+        err = ERR::INVALID;
+        throw std::runtime_error("failed to create window surface!");
+    }
+    return err;
+}
+
+ERR NanoGraphics::Init(NanoWindow& window){
+    ERR err = ERR::OK;
+    // Here the err validation is not that useful
+    // a iferr_return can be added at the end of each statement to check it's state and exit (or at least warn) if an error did occur
+    err = createInstance(_NanoContext.instance, Config::APP_NAME, Config::ENGINE_NAME); // APP_NAME and ENGINE_NAME is defined in NanoConfig
     err = setupDebugMessenger(_NanoContext.instance, _NanoContext.debugMessenger); // this depends on whether we are running in debug or not
+    err = createSurface(_NanoContext.instance, window.getGLFWwindow(), _NanoContext.surface);
     err = pickPhysicalDevice(_NanoContext.instance, _NanoContext.physicalDevice); // physical device is not created but picked based on scores dictated by the number of supported features
-    err = createLogicalDevice(_NanoContext.physicalDevice, _NanoContext.queueIndices, _NanoContext.device, _NanoContext.graphicsQueue); // Logical device *is* created and therefore has to be destroyed
+    err = createLogicalDevice(_NanoContext.physicalDevice,
+                              _NanoContext.queueIndices,
+                              _NanoContext.device,
+                              _NanoContext.graphicsQueue,
+                              _NanoContext.presentQueue); // Logical device *is* created and therefore has to be destroyed
+
     return err;
 }

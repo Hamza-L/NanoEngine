@@ -5,7 +5,7 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdint>
-#include "NanoLogger.hpp"
+#include "NanoError.hpp"
 
 class NanoWindow {
   public:
@@ -14,10 +14,10 @@ class NanoWindow {
     void PollEvents();
     bool ShouldWindowClose();
     ERR CleanUp();
+    GLFWwindow* getGLFWwindow();
 
   private:
     bool m_isInit = false;
-    GLFWwindow *m_window = nullptr;
 };
 
 #endif // NANOWINDOW_H_

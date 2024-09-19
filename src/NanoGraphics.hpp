@@ -1,12 +1,12 @@
 #ifndef NANOGRAPHICS_H_
 #define NANOGRAPHICS_H_
 
-#include <vulkan/vulkan_core.h>
 #include "NanoLogger.hpp"
+#include "NanoWindow.hpp"
 
 class NanoGraphics{
     public:
-        ERR Init();
+        ERR Init(NanoWindow& window);
         ERR CleanUp();
     private:
 };

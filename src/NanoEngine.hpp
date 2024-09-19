@@ -18,8 +18,8 @@ class NanoEngine {
 
   private:
     ERR MainLoop();
-    NanoGraphics m_NGraphics;
-    NanoWindow m_NWindow;
+    NanoGraphics m_NanoGraphics;
+    NanoWindow m_NanoWindow;
 };
 
 #endif // NANOENGINE_H_

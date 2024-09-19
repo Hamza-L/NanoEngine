@@ -4,7 +4,7 @@
 
 Logger *Logger::oneAndOnlyInstance = nullptr;
 int Logger::uniqueID = 0;
-ERRLevel Logger::severity = INFO;
+ERRLevel Logger::severity = ERRLevel::INFO;
 std::vector<std::string> Logger::logMessages{};
 int ScopeTracker::indentTracker = 1;
 
@@ -12,8 +12,6 @@ static std::string severityEnumToString(ERRLevel severityLevel) {
     switch (severityLevel) {
     case ERRLevel::FATAL:
         return "FATAL";
-    case ERRLevel::ERROR:
-        return "ERROR";
     case ERRLevel::WARNING:
         return "WARNING";
     case ERRLevel::DEBUG:
