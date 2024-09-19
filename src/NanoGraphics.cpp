@@ -25,15 +25,23 @@ struct QueueFamilyIndices {
     }
 };
 
+struct SwapChainDetails {
+    VkSurfaceCapabilitiesKHR capabilities{};
+    std::vector<VkSurfaceFormatKHR> formats{};
+    std::vector<VkPresentModeKHR> presentModes{};
+};
+
 struct NanoVKContext{
     VkInstance instance{};
-    VkDebugUtilsMessengerEXT debugMessenger;
-    VkPhysicalDevice physicalDevice;
-    struct QueueFamilyIndices queueIndices;
-    VkDevice device;
-    VkQueue graphicsQueue;
-    VkQueue presentQueue;
-    VkSurfaceKHR surface;
+    VkDebugUtilsMessengerEXT debugMessenger{};
+    VkPhysicalDevice physicalDevice{};
+    struct QueueFamilyIndices queueIndices{};
+    VkDevice device{};
+    VkQueue graphicsQueue{};
+    VkQueue presentQueue{};
+    VkSurfaceKHR surface{};
+    struct SwapChainDetails swapchainInfo{};
+    VkSwapchainKHR swapchain{};
 } _NanoContext;
 
 // We have to look up the address of the debug callback create function ourselves using vkGetInstanceProcAddr
@@ -143,6 +151,29 @@ static bool checkValidationLayerSupport(const char* const* validationLayers) {
     }
 
     return true;
+}
+
+SwapChainDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
+    SwapChainDetails details;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
+
+    uint32_t formatCount;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+
+    if (formatCount != 0) {
+        details.formats.resize(formatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
+    }
+
+    uint32_t presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+
+    if (presentModeCount != 0) {
+        details.presentModes.resize(presentModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
+    }
+
+    return details;
 }
 
 static std::vector<const char*> getRequiredInstanceExtensions(){
@@ -284,10 +315,11 @@ ERR checkDeviceExtensionSupport(VkPhysicalDevice device) {
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
-    std::set<const char*> requiredExtensions{};
+    std::set<std::string> requiredExtensions{};
     int extIdx = 0;
     while(Config::deviceExtensions[extIdx]){
-        requiredExtensions.emplace(Config::deviceExtensions[extIdx]);
+        requiredExtensions.emplace(std::string(Config::deviceExtensions[extIdx]));
+        extIdx++;
     }
 
     // make sure we go through all the list of desiredExtensions and "check off" all of them
@@ -299,7 +331,7 @@ ERR checkDeviceExtensionSupport(VkPhysicalDevice device) {
     return err;
 }
 
-int rateDeviceSuitability(VkPhysicalDevice device) {
+int rateDeviceSuitability(const VkPhysicalDevice& device,const VkSurfaceKHR& surface, QueueFamilyIndices& queueIndices) {
     VkPhysicalDeviceProperties deviceProperties;
     vkGetPhysicalDeviceProperties(device, &deviceProperties);
 
@@ -321,10 +353,30 @@ int rateDeviceSuitability(VkPhysicalDevice device) {
         return 0;
     }
 
+    // Application can't function without the required device extensions
+    bool extensionsSupported = ERR::OK == checkDeviceExtensionSupport(device);
+    if (!extensionsSupported) {
+        return 0;
+    }
+
+    bool swapChainAdequate = false;
+    if (extensionsSupported) {
+        SwapChainDetails swapChainSupport = querySwapChainSupport(device, surface);
+        swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+        if(!swapChainAdequate){
+            return 0; // Application can't function without an adequate swapchain extensions
+        }
+    }
+
+    if(ERR::NOT_FOUND == findQueueFamilies(device, queueIndices)){
+        return 0;
+    }
+
+
     return score;
 }
 
-static ERR pickPhysicalDevice(VkInstance& instance, VkPhysicalDevice& physicalDevice){
+static ERR pickPhysicalDevice(const VkInstance& instance, const VkSurfaceKHR& surface, VkPhysicalDevice& physicalDevice, QueueFamilyIndices& queueIndices){
     ERR err = ERR::OK;
     physicalDevice = VK_NULL_HANDLE;
 
@@ -342,7 +394,7 @@ static ERR pickPhysicalDevice(VkInstance& instance, VkPhysicalDevice& physicalDe
     std::multimap<int, VkPhysicalDevice> candidates;
 
     for (const auto& device : devices) {
-        int score = rateDeviceSuitability(device);
+        int score = rateDeviceSuitability(device, surface, queueIndices);
         candidates.insert(std::make_pair(score, device));
     }
 
@@ -358,11 +410,6 @@ static ERR pickPhysicalDevice(VkInstance& instance, VkPhysicalDevice& physicalDe
     if(physicalDevice == VK_NULL_HANDLE){
         err = ERR::NOT_FOUND;
         throw std::runtime_error("failed to find a suitable GPU!");
-    }
-
-    if(ERR::NOT_FOUND == findQueueFamilies(physicalDevice, _NanoContext.queueIndices)){
-        err = ERR::NOT_FOUND;
-        throw std::runtime_error("failed to find a graphics familiy queue!");
     }
 
     return ERR::OK;//this is never reached if we use try/catch.
@@ -437,7 +484,10 @@ ERR NanoGraphics::Init(NanoWindow& window){
     err = createInstance(_NanoContext.instance, Config::APP_NAME, Config::ENGINE_NAME); // APP_NAME and ENGINE_NAME is defined in NanoConfig
     err = setupDebugMessenger(_NanoContext.instance, _NanoContext.debugMessenger); // this depends on whether we are running in debug or not
     err = createSurface(_NanoContext.instance, window.getGLFWwindow(), _NanoContext.surface);
-    err = pickPhysicalDevice(_NanoContext.instance, _NanoContext.physicalDevice); // physical device is not created but picked based on scores dictated by the number of supported features
+    err = pickPhysicalDevice(_NanoContext.instance,
+                             _NanoContext.surface,
+                             _NanoContext.physicalDevice,
+                             _NanoContext.queueIndices); // physical device is not created but picked based on scores dictated by the number of supported features
     err = createLogicalDevice(_NanoContext.physicalDevice,
                               _NanoContext.queueIndices,
                               _NanoContext.device,
