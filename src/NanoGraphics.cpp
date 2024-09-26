@@ -1,9 +1,9 @@
 #include "NanoGraphics.hpp"
-#include "NanoWindow.hpp"
 #include "NanoConfig.hpp"
 #include "NanoError.hpp"
-#include "NanoUtility.hpp"
 #include "NanoLogger.hpp"
+#include "NanoUtility.hpp"
+#include "NanoWindow.hpp"
 #include "vulkan/vulkan_core.h"
 #include <cstdint>
 #include <stdio.h>
@@ -11,38 +11,53 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <vector>
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <set>
+#include <vector>
 
 struct QueueFamilyIndices {
     int32_t graphicsFamily = -1;
     int32_t presentFamily = -1;
 
-    bool IsValid(){ //helper function to validate queue indices
+    bool IsValid() { // helper function to validate queue indices
         return graphicsFamily != -1 && presentFamily != -1;
     }
 };
 
 struct SwapChainDetails {
     VkSurfaceCapabilitiesKHR capabilities{};
+
     std::vector<VkSurfaceFormatKHR> formats{};
+    VkSurfaceFormatKHR selectedFormat{};
+
     std::vector<VkPresentModeKHR> presentModes{};
+    VkPresentModeKHR selectedPresentMode{};
+
+    VkExtent2D currentExtent;
+
+    uint32_t imageCount;
 };
 
-struct NanoVKContext{
+struct NanoVKContext {
     VkInstance instance{};
-    VkDebugUtilsMessengerEXT debugMessenger{};
     VkPhysicalDevice physicalDevice{};
-    struct QueueFamilyIndices queueIndices{};
     VkDevice device{};
+
+    struct QueueFamilyIndices queueIndices {};
     VkQueue graphicsQueue{};
     VkQueue presentQueue{};
+
     VkSurfaceKHR surface{};
-    struct SwapChainDetails swapchainInfo{};
+
     VkSwapchainKHR swapchain{};
+    struct SwapChainDetails swapchainInfo {};
+    std::vector<VkImage> swapchainImages{};
+    std::vector<VkImageView> swapchainImageViews{};
 } _NanoContext;
+
+VkDebugUtilsMessengerEXT debugMessenger{};
 
 // We have to look up the address of the debug callback create function ourselves using vkGetInstanceProcAddr
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
@@ -90,12 +105,12 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
 
     LOG_MSG(messageLevel, "%s", pCallbackData->pMessage);
     fprintf(stderr, "Objects involved: \n");
-    for(int i = 0; i < pCallbackData->objectCount; i++){
+    for (int i = 0; i < pCallbackData->objectCount; i++) {
         fprintf(stderr, "\t%s\n", pCallbackData->pObjects[i].pObjectName);
     }
     fprintf(stderr, "\n");
 
-    if(messageLevel == ERRLevel::FATAL)
+    if (messageLevel == ERRLevel::FATAL)
         throw std::runtime_error("Validation layer has returned fatal error");
 
     return VK_FALSE;
@@ -111,15 +126,20 @@ static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT 
     createInfo.pUserData = nullptr;
 }
 
-ERR NanoGraphics::CleanUp(){
+ERR NanoGraphics::CleanUp() {
     ERR err = ERR::OK;
+    for (auto imageView : _NanoContext.swapchainImageViews) {
+        vkDestroyImageView(_NanoContext.device, imageView, nullptr);
+    }
+
+    vkDestroySwapchainKHR(_NanoContext.device, _NanoContext.swapchain, nullptr);
 
     vkDestroySurfaceKHR(_NanoContext.instance, _NanoContext.surface, nullptr);
 
     vkDestroyDevice(_NanoContext.device, nullptr);
 
     if (Config::enableValidationLayers) {
-        DestroyDebugUtilsMessengerEXT(_NanoContext.instance, _NanoContext.debugMessenger, nullptr);
+        DestroyDebugUtilsMessengerEXT(_NanoContext.instance, debugMessenger, nullptr);
     }
 
     vkDestroyInstance(_NanoContext.instance, nullptr);
@@ -127,7 +147,7 @@ ERR NanoGraphics::CleanUp(){
     return err;
 }
 
-static bool checkValidationLayerSupport(const char* const* validationLayers) {
+static bool checkValidationLayerSupport(const char *const *validationLayers) {
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
@@ -135,9 +155,9 @@ static bool checkValidationLayerSupport(const char* const* validationLayers) {
     vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
     int indx = 0;
-    while(validationLayers[indx]) {
+    while (validationLayers[indx]) {
         bool layerFound = false;
-        for (const auto& layerProperties : availableLayers) {
+        for (const auto &layerProperties : availableLayers) {
             if (strcmp(validationLayers[indx], layerProperties.layerName) == 0) {
                 layerFound = true;
                 break;
@@ -153,7 +173,7 @@ static bool checkValidationLayerSupport(const char* const* validationLayers) {
     return true;
 }
 
-SwapChainDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
+SwapChainDetails querySwapChainSupport(const VkPhysicalDevice device, const VkSurfaceKHR surface) {
     SwapChainDetails details;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
 
@@ -176,15 +196,15 @@ SwapChainDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR sur
     return details;
 }
 
-static std::vector<const char*> getRequiredInstanceExtensions(){
+static std::vector<const char *> getRequiredInstanceExtensions() {
     uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions;
+    const char **glfwExtensions;
 
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
     // additional instance extension we may want to add
-    std::vector<const char*> instanceExtensions;
-    for(uint32_t i = 0; i < glfwExtensionCount; i++) {
+    std::vector<const char *> instanceExtensions;
+    for (uint32_t i = 0; i < glfwExtensionCount; i++) {
         instanceExtensions.emplace_back(glfwExtensions[i]);
     }
 #if MACOS
@@ -199,7 +219,7 @@ static std::vector<const char*> getRequiredInstanceExtensions(){
     // ----------------------------------------
 }
 
-static std::vector<VkExtensionProperties>& getSupportedInstanceExtensions(std::vector<VkExtensionProperties>& extensions){
+static std::vector<VkExtensionProperties> &getSupportedInstanceExtensions(std::vector<VkExtensionProperties> &extensions) {
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
 
@@ -208,7 +228,7 @@ static std::vector<VkExtensionProperties>& getSupportedInstanceExtensions(std::v
 
 #ifdef _DEBUG
     std::cout << "available extensions:\n";
-    for (const auto& extension : extensions) {
+    for (const auto &extension : extensions) {
         std::cout << '\t' << extension.extensionName << '\n';
     }
     std::cout.flush();
@@ -217,11 +237,11 @@ static std::vector<VkExtensionProperties>& getSupportedInstanceExtensions(std::v
     return extensions;
 }
 
-static ERR createInstance(VkInstance& instance, const char* applicationName, const char* engineName) {
+static ERR createInstance(const char *applicationName, const char *engineName, VkInstance &instance) {
     ERR err = ERR::OK;
 
     if (Config::enableValidationLayers && !checkValidationLayerSupport(Config::desiredValidationLayers)) {
-        LOG_MSG( ERRLevel::FATAL, "Number of Desired Layers %zu\n", Utility::SizeOf(Config::desiredValidationLayers));
+        LOG_MSG(ERRLevel::FATAL, "Number of Desired Layers %zu\n", Utility::SizeOf(Config::desiredValidationLayers));
         throw std::runtime_error("validation layers requested, but not available!");
     }
 
@@ -243,8 +263,8 @@ static ERR createInstance(VkInstance& instance, const char* applicationName, con
     // std::vector<VkExtensionProperties> test = {};
     // _getSupportedInstanceExtensions(test);
 
-    std::vector<const char*> instanceExtensions = getRequiredInstanceExtensions();
-    createInfo.enabledExtensionCount = (uint32_t) instanceExtensions.size();
+    std::vector<const char *> instanceExtensions = getRequiredInstanceExtensions();
+    createInfo.enabledExtensionCount = (uint32_t)instanceExtensions.size();
     createInfo.ppEnabledExtensionNames = instanceExtensions.data();
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
@@ -266,20 +286,20 @@ static ERR createInstance(VkInstance& instance, const char* applicationName, con
     return err;
 }
 
-static ERR setupDebugMessenger(VkInstance& instance, VkDebugUtilsMessengerEXT& debugMessenger){
+static ERR setupDebugMessenger(VkInstance &instance, VkDebugUtilsMessengerEXT &debugMessenger) {
     ERR err = ERR::OK;
 
-    if(!Config::enableValidationLayers){
+    if (!Config::enableValidationLayers) {
         return ERR::OK;
     }
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     populateDebugMessengerCreateInfo(createInfo);
 
-    VK_CHECK_THROW(CreateDebugUtilsMessengerEXT(_NanoContext.instance, &createInfo, nullptr, &_NanoContext.debugMessenger), "Failed to create Debug Messenger\n");
-    return ERR::OK;//this is never reached if we use try/catch.
+    VK_CHECK_THROW(CreateDebugUtilsMessengerEXT(_NanoContext.instance, &createInfo, nullptr, &debugMessenger), "Failed to create Debug Messenger\n");
+    return ERR::OK; // this is never reached if we use try/catch.
 }
 
-ERR findQueueFamilies(VkPhysicalDevice device, QueueFamilyIndices& indices) {
+ERR findQueueFamilies(VkPhysicalDevice device, QueueFamilyIndices &indices) {
     ERR err = ERR::NOT_FOUND;
     // Logic to find queue family indices to populate struct with
 
@@ -294,11 +314,11 @@ ERR findQueueFamilies(VkPhysicalDevice device, QueueFamilyIndices& indices) {
             indices.graphicsFamily = i;
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, _NanoContext.surface, &presentSupport);
-            if(presentSupport)
+            if (presentSupport)
                 indices.presentFamily = i;
         }
 
-        if(indices.IsValid()){
+        if (indices.IsValid()) {
             err = ERR::OK;
             return err;
         }
@@ -317,13 +337,13 @@ ERR checkDeviceExtensionSupport(VkPhysicalDevice device) {
 
     std::set<std::string> requiredExtensions{};
     int extIdx = 0;
-    while(Config::deviceExtensions[extIdx]){
+    while (Config::deviceExtensions[extIdx]) {
         requiredExtensions.emplace(std::string(Config::deviceExtensions[extIdx]));
         extIdx++;
     }
 
     // make sure we go through all the list of desiredExtensions and "check off" all of them
-    for (const auto& extension : availableExtensions) {
+    for (const auto &extension : availableExtensions) {
         requiredExtensions.erase(extension.extensionName);
     }
 
@@ -331,7 +351,7 @@ ERR checkDeviceExtensionSupport(VkPhysicalDevice device) {
     return err;
 }
 
-int rateDeviceSuitability(const VkPhysicalDevice& device,const VkSurfaceKHR& surface, QueueFamilyIndices& queueIndices) {
+int rateDeviceSuitability(const VkPhysicalDevice &device, const VkSurfaceKHR &surface, QueueFamilyIndices &queueIndices) {
     VkPhysicalDeviceProperties deviceProperties;
     vkGetPhysicalDeviceProperties(device, &deviceProperties);
 
@@ -363,20 +383,20 @@ int rateDeviceSuitability(const VkPhysicalDevice& device,const VkSurfaceKHR& sur
     if (extensionsSupported) {
         SwapChainDetails swapChainSupport = querySwapChainSupport(device, surface);
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
-        if(!swapChainAdequate){
+        if (!swapChainAdequate) {
             return 0; // Application can't function without an adequate swapchain extensions
         }
     }
 
-    if(ERR::NOT_FOUND == findQueueFamilies(device, queueIndices)){
+    if (ERR::NOT_FOUND == findQueueFamilies(device, queueIndices)) {
         return 0;
     }
-
 
     return score;
 }
 
-static ERR pickPhysicalDevice(const VkInstance& instance, const VkSurfaceKHR& surface, VkPhysicalDevice& physicalDevice, QueueFamilyIndices& queueIndices){
+static ERR pickPhysicalDevice(const VkInstance &instance, const VkSurfaceKHR &surface, QueueFamilyIndices &queueIndices,
+                              VkPhysicalDevice &physicalDevice) {
     ERR err = ERR::OK;
     physicalDevice = VK_NULL_HANDLE;
 
@@ -393,32 +413,58 @@ static ERR pickPhysicalDevice(const VkInstance& instance, const VkSurfaceKHR& su
     // Use an ordered map to automatically sort candidates by increasing score
     std::multimap<int, VkPhysicalDevice> candidates;
 
-    for (const auto& device : devices) {
+    for (const auto &device : devices) {
         int score = rateDeviceSuitability(device, surface, queueIndices);
         candidates.insert(std::make_pair(score, device));
     }
 
     // Check if the best candidate is suitable at all
     int bestScore = 0;
-    for(auto & candidate : candidates){
+    for (auto &candidate : candidates) {
         if (candidate.first > 0 && candidate.first > bestScore) {
             bestScore = candidate.first;
             physicalDevice = candidates.rbegin()->second;
         }
     }
 
-    if(physicalDevice == VK_NULL_HANDLE){
+    if (physicalDevice == VK_NULL_HANDLE) {
         err = ERR::NOT_FOUND;
         throw std::runtime_error("failed to find a suitable GPU!");
+    } else {
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+
+        char deviceType[256] = {0};
+        switch (deviceProperties.deviceType) {
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+            strcpy_s(deviceType, "DESCRETE GPU");
+            break;
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+            strcpy_s(deviceType, "INTEGRATED GPU");
+            break;
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+            strcpy_s(deviceType, "VIRTUAL GPU");
+            break;
+        case VK_PHYSICAL_DEVICE_TYPE_CPU:
+            strcpy_s(deviceType, "CPU");
+            break;
+        case VK_PHYSICAL_DEVICE_TYPE_OTHER:
+            strcpy_s(deviceType, "OTHER");
+            break;
+        default:
+            strcpy_s(deviceType, "UNKNOWN");
+        }
+        LOG_MSG(ERRLevel::INFO, "Physical device selected: %s [%s]", deviceProperties.deviceName, deviceType);
     }
 
-    return ERR::OK;//this is never reached if we use try/catch.
+    return ERR::OK; // this is never reached if we use try/catch.
 }
 
-ERR createLogicalDevice(VkPhysicalDevice& physicalDevice, QueueFamilyIndices& indices, VkDevice& device, VkQueue& graphicsQueue, VkQueue& presentQueue) {
+ERR createLogicalDevice(VkPhysicalDevice &physicalDevice, QueueFamilyIndices &indices, VkQueue &graphicsQueue, VkQueue &presentQueue,
+                        VkDevice &device) {
     ERR err = ERR::OK;
 
-    if(!indices.IsValid() && ERR::NOT_FOUND == findQueueFamilies(_NanoContext.physicalDevice, indices)){
+    if (!indices.IsValid() && ERR::NOT_FOUND == findQueueFamilies(_NanoContext.physicalDevice, indices)) {
         throw std::runtime_error("failed to find a graphics familiy queue!");
     }
 
@@ -428,7 +474,7 @@ ERR createLogicalDevice(VkPhysicalDevice& physicalDevice, QueueFamilyIndices& in
 
     float queuePriority = 1.0f;
     for (uint32_t queueFamily : uniqueQueueFamilies) {
-        if(queueFamily == -1)
+        if (queueFamily == -1)
             continue;
         VkDeviceQueueCreateInfo queueCreateInfo{};
         queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -459,15 +505,17 @@ ERR createLogicalDevice(VkPhysicalDevice& physicalDevice, QueueFamilyIndices& in
         throw std::runtime_error("failed to create logical device!");
     }
 
-    if(indices.IsValid()){
-        vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue); //The graphics queue is already created if we have successfully created a logical device. This is only to retrieve the handle
-        vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue); //The graphics queue is already created if we have successfully created a logical device. This is only to retrieve the handle
+    if (indices.IsValid()) {
+        vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue); // The graphics queue is already created if we have successfully created
+                                                                             // a logical device. This is only to retrieve the handle
+        vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue); // The graphics queue is already created if we have successfully created a
+                                                                           // logical device. This is only to retrieve the handle
     }
 
     return err;
 }
 
-ERR createSurface(VkInstance instance, GLFWwindow* window, VkSurfaceKHR& surface){
+ERR createSurface(VkInstance instance, GLFWwindow *window, VkSurfaceKHR &surface) {
     ERR err = ERR::OK;
 
     if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
@@ -477,22 +525,175 @@ ERR createSurface(VkInstance instance, GLFWwindow* window, VkSurfaceKHR& surface
     return err;
 }
 
-ERR NanoGraphics::Init(NanoWindow& window){
+VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats) {
+    for (const auto &availableFormat : availableFormats) {
+        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            LOG_MSG(ERRLevel::INFO, "swapchain format used: VK_FORMAT_B8G8R8A8_SRGB");
+            LOG_MSG(ERRLevel::INFO, "swapchain colorspace used: VK_COLOR_SPACE_SRGB_NONLINEAR_KHR");
+            return availableFormat;
+        }
+    }
+    return availableFormats[0]; // pick the first available format if we do not find the format desired
+}
+
+VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
+    for (const auto &availablePresentMode : availablePresentModes) {
+        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+            LOG_MSG(ERRLevel::INFO, "swapchain present mode used: VK_PRESENT_MODE_MAILBOX_KHR");
+            return availablePresentMode;
+        }
+    }
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+VkExtent2D chooseSwapExtent(GLFWwindow *window, const VkSurfaceCapabilitiesKHR &capabilities) {
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+        LOG_MSG(ERRLevel::INFO, "swapchain extent mode used: {%d,%d}", capabilities.currentExtent.width, capabilities.currentExtent.height);
+        return capabilities.currentExtent;
+    } else {
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+
+        VkExtent2D actualExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+
+        actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+
+        return actualExtent;
+    }
+}
+
+ERR createSwapChain(const VkPhysicalDevice &physicalDevice, const VkDevice &device, GLFWwindow *window, const VkSurfaceKHR &surface,
+                    VkSwapchainKHR &swapchain, SwapChainDetails& swapChainDetails, std::vector<VkImage> &swapchainImages) {
+    ERR err = ERR::OK;
+    swapChainDetails = querySwapChainSupport(physicalDevice, surface);
+
+    swapChainDetails.selectedFormat = chooseSwapSurfaceFormat(swapChainDetails.formats);
+    swapChainDetails.selectedPresentMode = chooseSwapPresentMode(swapChainDetails.presentModes);
+    swapChainDetails.currentExtent = chooseSwapExtent(window, swapChainDetails.capabilities);
+
+    swapChainDetails.imageCount = swapChainDetails.capabilities.minImageCount + 1;
+    if (swapChainDetails.capabilities.maxImageCount > 0 && swapChainDetails.imageCount > swapChainDetails.capabilities.maxImageCount) {
+        swapChainDetails.imageCount = swapChainDetails.capabilities.maxImageCount;
+    }
+
+    LOG_MSG(ERRLevel::INFO, "Number of images used by the swapchain: %d", swapChainDetails.imageCount);
+
+    VkSwapchainCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface = surface;
+    createInfo.minImageCount = swapChainDetails.imageCount;
+    createInfo.imageFormat = swapChainDetails.selectedFormat.format;
+    createInfo.imageColorSpace = swapChainDetails.selectedFormat.colorSpace;
+    createInfo.imageExtent = swapChainDetails.currentExtent;
+    createInfo.imageArrayLayers = 1;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    QueueFamilyIndices indices = {};
+    err = findQueueFamilies(physicalDevice, indices);
+    uint32_t queueFamilyIndices[2] = {};
+    if (indices.IsValid()) {
+        queueFamilyIndices[0] = indices.graphicsFamily;
+        queueFamilyIndices[1] = indices.presentFamily;
+    } else {
+        LOG_MSG(ERRLevel::WARNING, "Queue Family indices is invalid. called in : createSwapChain(...)")
+    }
+
+    if (indices.graphicsFamily != indices.presentFamily) {
+        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        createInfo.queueFamilyIndexCount = 2;
+        createInfo.pQueueFamilyIndices = queueFamilyIndices;
+        LOG_MSG(ERRLevel::WARNING, "Graphics queue family is not the same as Present queue family. Swapchain images have to be concurent")
+    } else {
+        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        createInfo.queueFamilyIndexCount = 0;     // Optional
+        createInfo.pQueueFamilyIndices = nullptr; // Optional
+    }
+    createInfo.preTransform = swapChainDetails.capabilities.currentTransform;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // TODO: If transparency is to be enabled, change this
+    if (createInfo.compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
+        LOG_MSG(ERRLevel::INFO, "swapchain images not set to OPAQUE_BIT_KHR. Transparent window might be enabled")
+    }
+    createInfo.presentMode = swapChainDetails.selectedPresentMode;
+    createInfo.clipped = VK_TRUE; // This deals with obstructed pixels when, for example, another window is ontop.
+    createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create swap chain!");
+    }
+
+    vkGetSwapchainImagesKHR(device, swapchain, &swapChainDetails.imageCount, nullptr);
+    swapchainImages.resize(swapChainDetails.imageCount);
+    vkGetSwapchainImagesKHR(device, swapchain, &swapChainDetails.imageCount, swapchainImages.data());
+
+    return err;
+}
+
+ERR createSCImageViews(const VkDevice &device, const SwapChainDetails &swapchainDetails, const std::vector<VkImage> &swapchainImages,
+                       std::vector<VkImageView> &swapchainImageViews) {
+    ERR err = ERR::OK;
+    swapchainImageViews.resize(swapchainImages.size());
+    for (size_t i = 0; i < swapchainImages.size(); i++) {
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        createInfo.image = swapchainImages[i];
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo.format = swapchainDetails.selectedFormat.format;
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        createInfo.subresourceRange.baseMipLevel = 0;
+        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount = 1;
+        if (vkCreateImageView(device, &createInfo, nullptr, &swapchainImageViews[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create image views!");
+        }
+    }
+
+    return err;
+}
+
+ERR NanoGraphics::Init(NanoWindow &window) {
     ERR err = ERR::OK;
     // Here the err validation is not that useful
     // a iferr_return can be added at the end of each statement to check it's state and exit (or at least warn) if an error did occur
-    err = createInstance(_NanoContext.instance, Config::APP_NAME, Config::ENGINE_NAME); // APP_NAME and ENGINE_NAME is defined in NanoConfig
-    err = setupDebugMessenger(_NanoContext.instance, _NanoContext.debugMessenger); // this depends on whether we are running in debug or not
-    err = createSurface(_NanoContext.instance, window.getGLFWwindow(), _NanoContext.surface);
+    err = createInstance(Config::APP_NAME,
+                         Config::ENGINE_NAME,
+                         _NanoContext.instance); // APP_NAME and ENGINE_NAME is defined in NanoConfig
+
+    err = setupDebugMessenger(_NanoContext.instance,
+                              debugMessenger); // this depends on whether we are running in debug or not
+
+    err = createSurface(_NanoContext.instance,
+                        window.getGLFWwindow(),
+                        _NanoContext.surface);
+
     err = pickPhysicalDevice(_NanoContext.instance,
                              _NanoContext.surface,
-                             _NanoContext.physicalDevice,
-                             _NanoContext.queueIndices); // physical device is not created but picked based on scores dictated by the number of supported features
+                             _NanoContext.queueIndices,
+                             _NanoContext.physicalDevice); // physical device is not created but picked based on scores dictated by the number of supported features
+
     err = createLogicalDevice(_NanoContext.physicalDevice,
                               _NanoContext.queueIndices,
-                              _NanoContext.device,
+                              _NanoContext.presentQueue,
                               _NanoContext.graphicsQueue,
-                              _NanoContext.presentQueue); // Logical device *is* created and therefore has to be destroyed
+                              _NanoContext.device); // Logical device *is* created and therefore has to be destroyed
+
+    err = createSwapChain(_NanoContext.physicalDevice,
+                          _NanoContext.device,
+                          window.getGLFWwindow(),
+                          _NanoContext.surface,
+                          _NanoContext.swapchain,
+                          _NanoContext.swapchainInfo,
+                          _NanoContext.swapchainImages);
+
+    err = createSCImageViews(_NanoContext.device,
+                             _NanoContext.swapchainInfo,
+                             _NanoContext.swapchainImages,
+                             _NanoContext.swapchainImageViews);
 
     return err;
 }
