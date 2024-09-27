@@ -4,6 +4,8 @@
 #include "NanoLogger.hpp"
 #include "NanoUtility.hpp"
 #include "NanoWindow.hpp"
+#include "NanoShader.hpp"
+
 #include "vulkan/vulkan_core.h"
 #include <cstdint>
 #include <stdio.h>
@@ -656,6 +658,20 @@ ERR createSCImageViews(const VkDevice &device, const SwapChainDetails &swapchain
     return err;
 }
 
+ERR createGraphicsPipeline() {
+    ERR err = ERR::OK;
+
+    NanoShader vertShader = {};
+    vertShader.Init("./src/shader/shader.vert");
+    vertShader.Compile();
+
+    NanoShader fragShader = {};
+    vertShader.Init("./src/shader/shader.frag");
+    vertShader.Compile();
+
+    return err;
+}
+
 ERR NanoGraphics::Init(NanoWindow &window) {
     ERR err = ERR::OK;
     // Here the err validation is not that useful
@@ -694,6 +710,8 @@ ERR NanoGraphics::Init(NanoWindow &window) {
                              _NanoContext.swapchainInfo,
                              _NanoContext.swapchainImages,
                              _NanoContext.swapchainImageViews);
+
+    err = createGraphicsPipeline();
 
     return err;
 }
