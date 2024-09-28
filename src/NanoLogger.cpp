@@ -49,6 +49,7 @@ void Logger::Log(ERRLevel messageSeverity, const char *fmt, ...) {
     float arg2;
     double arg3;
     char *arg4;
+    unsigned long arg5;
 
     while (*fmt != '\0') {
         if (*fmt == '%') {
@@ -71,6 +72,12 @@ void Logger::Log(ERRLevel messageSeverity, const char *fmt, ...) {
             case 'f':
                 arg3 = va_arg(args, double);
                 message << arg3;
+                break;
+            case 'l':
+                if(*(fmt + 1) == 'u'){
+                    arg5 = va_arg(args, unsigned long);
+                    message << arg5;
+                }
                 break;
             }
         } else {

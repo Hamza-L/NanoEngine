@@ -5,6 +5,7 @@
 #include "NanoUtility.hpp"
 #include "NanoWindow.hpp"
 #include "NanoShader.hpp"
+#include "NanoGraphicsPipeline.hpp"
 
 #include "vulkan/vulkan_core.h"
 #include <cstdint>
@@ -57,6 +58,8 @@ struct NanoVKContext {
     struct SwapChainDetails swapchainInfo {};
     std::vector<VkImage> swapchainImages{};
     std::vector<VkImageView> swapchainImageViews{};
+
+    std::vector<NanoGraphicsPipeline> graphicsPipelines{};
 } _NanoContext;
 
 VkDebugUtilsMessengerEXT debugMessenger{};
@@ -130,7 +133,12 @@ static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT 
 
 ERR NanoGraphics::CleanUp() {
     ERR err = ERR::OK;
-    for (auto imageView : _NanoContext.swapchainImageViews) {
+
+    for (auto& graphicsPipeline : _NanoContext.graphicsPipelines){
+        graphicsPipeline.CleanUp();
+    }
+
+    for (auto& imageView : _NanoContext.swapchainImageViews) {
         vkDestroyImageView(_NanoContext.device, imageView, nullptr);
     }
 
@@ -658,16 +666,15 @@ ERR createSCImageViews(const VkDevice &device, const SwapChainDetails &swapchain
     return err;
 }
 
-ERR createGraphicsPipeline() {
+ERR createGraphicsPipeline(VkDevice& device) {
     ERR err = ERR::OK;
 
-    NanoShader vertShader = {};
-    vertShader.Init("./src/shader/shader.vert");
-    vertShader.Compile();
+    NanoGraphicsPipeline graphicsPipeline{};
+    graphicsPipeline.Init(device);
+    graphicsPipeline.AddVertShader("./src/shader/shader.vert");
+    graphicsPipeline.AddFragShader("./src/shader/shader.frag");
 
-    NanoShader fragShader = {};
-    vertShader.Init("./src/shader/shader.frag");
-    vertShader.Compile();
+    _NanoContext.graphicsPipelines.push_back(std::move(graphicsPipeline));
 
     return err;
 }
@@ -711,7 +718,7 @@ ERR NanoGraphics::Init(NanoWindow &window) {
                              _NanoContext.swapchainImages,
                              _NanoContext.swapchainImageViews);
 
-    err = createGraphicsPipeline();
+    err = createGraphicsPipeline(_NanoContext.device);
 
     return err;
 }
