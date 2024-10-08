@@ -8,13 +8,12 @@ class NanoGraphicsPipeline{
         void Init(VkDevice& device);
         void AddVertShader(const std::string& vertShaderFile);
         void AddFragShader(const std::string& fragShaderFile);
+        void ConfigureViewport(const VkExtent2D& extent);
         int Compile(bool forceReCompile = false);
         void CleanUp();
     private:
         VkDevice _device = {};
         NanoShader m_vertShader = {};
-        VkShaderModule m_vertShaderModule{};
         NanoShader m_fragShader = {};
-        VkShaderModule m_fragShaderModule{};
 };
 #endif // NANOGRAPHICSPIPELINE_H_

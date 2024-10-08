@@ -60,6 +60,10 @@ struct NanoVKContext {
     std::vector<VkImageView> swapchainImageViews{};
 
     std::vector<NanoGraphicsPipeline> graphicsPipelines{};
+
+    void AddGraphicsPipeline(const NanoGraphicsPipeline& graphicsPipeline){
+        graphicsPipelines.push_back(std::move(graphicsPipeline));
+    }
 } _NanoContext;
 
 VkDebugUtilsMessengerEXT debugMessenger{};
@@ -666,15 +670,16 @@ ERR createSCImageViews(const VkDevice &device, const SwapChainDetails &swapchain
     return err;
 }
 
-ERR createGraphicsPipeline(VkDevice& device) {
+ERR createGraphicsPipeline(VkDevice& device, SwapChainDetails& swapChainDetails) {
     ERR err = ERR::OK;
 
     NanoGraphicsPipeline graphicsPipeline{};
     graphicsPipeline.Init(device);
     graphicsPipeline.AddVertShader("./src/shader/shader.vert");
     graphicsPipeline.AddFragShader("./src/shader/shader.frag");
+    graphicsPipeline.ConfigureViewport(swapChainDetails.currentExtent);
 
-    _NanoContext.graphicsPipelines.push_back(std::move(graphicsPipeline));
+    _NanoContext.AddGraphicsPipeline(graphicsPipeline);
 
     return err;
 }
