@@ -2,8 +2,9 @@
 #include "vulkan/vulkan_core.h"
 
 //TODO ; Match the init design of the NanoGraphics class
-void NanoGraphicsPipeline::Init(VkDevice& device){
+void NanoGraphicsPipeline::Init(VkDevice& device, const VkExtent2D& extent){
     _device = device;
+    m_extent = extent;
 }
 
 void NanoGraphicsPipeline::AddVertShader(const std::string& vertFileName){
@@ -19,7 +20,7 @@ void NanoGraphicsPipeline::AddFragShader(const std::string& fragFileName){
 }
 
 void NanoGraphicsPipeline::ConfigureViewport(const VkExtent2D& extent){
-
+    m_extent = extent;
 }
 
 int NanoGraphicsPipeline::Compile(bool forceReCompile){
@@ -56,8 +57,8 @@ int NanoGraphicsPipeline::Compile(bool forceReCompile){
     inputAssemblyCI.primitiveRestartEnable = VK_FALSE;
 
     VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    viewport.x = m_extent.width;
+    viewport.y = m_extent.height;
 
     return res;
 }

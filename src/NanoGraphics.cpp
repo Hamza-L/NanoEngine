@@ -674,10 +674,9 @@ ERR createGraphicsPipeline(VkDevice& device, SwapChainDetails& swapChainDetails)
     ERR err = ERR::OK;
 
     NanoGraphicsPipeline graphicsPipeline{};
-    graphicsPipeline.Init(device);
+    graphicsPipeline.Init(device, swapChainDetails.currentExtent);
     graphicsPipeline.AddVertShader("./src/shader/shader.vert");
     graphicsPipeline.AddFragShader("./src/shader/shader.frag");
-    graphicsPipeline.ConfigureViewport(swapChainDetails.currentExtent);
 
     _NanoContext.AddGraphicsPipeline(graphicsPipeline);
 
