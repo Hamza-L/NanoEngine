@@ -58,8 +58,14 @@ struct NanoVKContext {
     struct SwapChainDetails swapchainInfo {};
     std::vector<VkImage> swapchainImages{};
     std::vector<VkImageView> swapchainImageViews{};
+    std::vector<VkFramebuffer> swapChainFramebuffers;
+
+    VkRenderPass renderpass{};
 
     std::vector<NanoGraphicsPipeline> graphicsPipelines{};
+
+    VkCommandPool commandPool{};
+    VkCommandBuffer commandBuffer{};
 
     void AddGraphicsPipeline(const NanoGraphicsPipeline& graphicsPipeline){
         graphicsPipelines.push_back(std::move(graphicsPipeline));
@@ -138,9 +144,17 @@ static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT 
 ERR NanoGraphics::CleanUp() {
     ERR err = ERR::OK;
 
+    vkDestroyCommandPool(_NanoContext.device, _NanoContext.commandPool, nullptr);
+
+    for (auto framebuffer : _NanoContext.swapChainFramebuffers) {
+        vkDestroyFramebuffer(_NanoContext.device, framebuffer, nullptr);
+    }
+
     for (auto& graphicsPipeline : _NanoContext.graphicsPipelines){
         graphicsPipeline.CleanUp();
     }
+
+    vkDestroyRenderPass(_NanoContext.device, _NanoContext.renderpass, nullptr);
 
     for (auto& imageView : _NanoContext.swapchainImageViews) {
         vkDestroyImageView(_NanoContext.device, imageView, nullptr);
@@ -670,15 +684,167 @@ ERR createSCImageViews(const VkDevice &device, const SwapChainDetails &swapchain
     return err;
 }
 
-ERR createGraphicsPipeline(VkDevice& device, SwapChainDetails& swapChainDetails) {
+ERR createGraphicsPipeline(VkDevice& device,const SwapChainDetails& swapChainDetails, const VkRenderPass& renderpass, NanoGraphicsPipeline& graphicsPipeline) {
     ERR err = ERR::OK;
 
-    NanoGraphicsPipeline graphicsPipeline{};
     graphicsPipeline.Init(device, swapChainDetails.currentExtent);
     graphicsPipeline.AddVertShader("./src/shader/shader.vert");
     graphicsPipeline.AddFragShader("./src/shader/shader.frag");
+    graphicsPipeline.AddRenderPass(renderpass);
+    graphicsPipeline.Compile();
 
-    _NanoContext.AddGraphicsPipeline(graphicsPipeline);
+    return err;
+}
+
+ERR createRenderPass(VkDevice& device, const SwapChainDetails& swapChainDetails, VkRenderPass& renderpass){
+    ERR err = ERR::OK;
+
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = swapChainDetails.selectedFormat.format;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // The following other types of attachments can be referenced by a subpass:
+    // pInputAttachments: Attachments that are read from a shader
+    // pResolveAttachments: Attachments used for multisampling color attachments
+    // pDepthStencilAttachment: Attachment for depth and stencil data
+    // pPreserveAttachments: Attachments that are not used by this subpass, but for which the data must be preserved
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef; // always add the reference to the attachment and never the attachment itself
+    // The index of the attachment in this array is directly referenced from the fragment shader with the layout(location = 0) out vec4 outColor directive!
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderpass) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create render pass!");
+    }
+
+    return err;
+}
+
+ERR createFramebuffer(VkDevice& device, const SwapChainDetails& swapChainDetails, const VkRenderPass& renderpass, const std::vector<VkImageView>& swapChainImageViews, std::vector<VkFramebuffer>& swapChainFramebuffers){
+    ERR err = ERR::OK;
+    swapChainFramebuffers.resize(swapChainDetails.imageCount);
+
+    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+        VkImageView attachments[] = {swapChainImageViews[i]};
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderpass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = swapChainDetails.currentExtent.width;
+        framebufferInfo.height = swapChainDetails.currentExtent.height;
+        framebufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create framebuffer!");
+        }
+    }
+    return err;
+}
+
+ERR createCommandPool(VkDevice& device, const QueueFamilyIndices& queueFamilyIndices, VkCommandPool& commandPool){
+    ERR err = ERR::OK;
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    ASSERT(queueFamilyIndices.graphicsFamily != -1, "Graphics family indices is not defined - createCommandPool(...)");
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
+
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create command pool!");
+    }
+
+    return err;
+}
+
+ERR createCommandBuffer(VkDevice& device, const VkCommandPool& commandPool, VkCommandBuffer& commandBuffer){
+    ERR err = ERR::OK;
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate command buffers!");
+    }
+
+    return err;
+}
+
+ERR recordCommandBuffer(NanoGraphicsPipeline& graphicsPipeline, const VkRenderPass& renderPass, const SwapChainDetails swapChainDetails, std::vector<VkFramebuffer>& swapChainFrameBuffers, VkCommandBuffer& commandBuffer, uint32_t imageIndex) {
+    ERR err = ERR::OK;
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = 0; // Optional
+    beginInfo.pInheritanceInfo = nullptr; // Optional
+
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        throw std::runtime_error("failed to begin recording command buffer!");
+    }
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = renderPass;
+    renderPassInfo.framebuffer = swapChainFrameBuffers[imageIndex];
+
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = swapChainDetails.currentExtent;
+
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+
+    {
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.GetPipeline());
+
+        // need to manually set the viewport and scissor here because we defined them as dynamic.
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapChainDetails.currentExtent.width);
+        viewport.height = static_cast<float>(swapChainDetails.currentExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swapChainDetails.currentExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+        vkCmdEndRenderPass(commandBuffer);
+    }
+
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to record command buffer!");
+    }
 
     return err;
 }
@@ -722,7 +888,36 @@ ERR NanoGraphics::Init(NanoWindow &window) {
                              _NanoContext.swapchainImages,
                              _NanoContext.swapchainImageViews);
 
-    err = createGraphicsPipeline(_NanoContext.device);
+    err = createRenderPass(_NanoContext.device,
+                           _NanoContext.swapchainInfo,
+                           _NanoContext.renderpass);
 
+    NanoGraphicsPipeline graphicsPipeline{};
+    err = createGraphicsPipeline(_NanoContext.device,
+                                 _NanoContext.swapchainInfo,
+                                 _NanoContext.renderpass,
+                                 graphicsPipeline);
+
+    _NanoContext.AddGraphicsPipeline(graphicsPipeline);
+
+    err = createFramebuffer(_NanoContext.device,
+                            _NanoContext.swapchainInfo,
+                            _NanoContext.renderpass,
+                            _NanoContext.swapchainImageViews,
+                            _NanoContext.swapChainFramebuffers);
+
+    err = createCommandPool(_NanoContext.device,
+                            _NanoContext.queueIndices,
+                            _NanoContext.commandPool);
+
+    err = createCommandBuffer(_NanoContext.device,
+                              _NanoContext.commandPool,
+                              _NanoContext.commandBuffer);
+
+    return err;
+}
+
+ERR NanoGraphics::DrawFrame(){
+    ERR err = ERR::OK;
     return err;
 }

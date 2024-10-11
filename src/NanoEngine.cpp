@@ -21,6 +21,7 @@ ERR NanoEngine::Init(){
 ERR NanoEngine::Run(){
     ERR err = ERR::OK;
     while(!m_NanoWindow.ShouldWindowClose()){
+
         m_NanoWindow.PollEvents();
 
         MainLoop();
@@ -31,6 +32,8 @@ ERR NanoEngine::Run(){
 
 ERR NanoEngine::MainLoop(){
     ERR err = ERR::OK;
+
+    m_NanoGraphics.DrawFrame();
 
     return err;
 }

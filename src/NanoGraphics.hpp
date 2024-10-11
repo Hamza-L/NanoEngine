@@ -7,6 +7,7 @@
 class NanoGraphics{
     public:
         ERR Init(NanoWindow& window);
+        ERR DrawFrame();
         ERR CleanUp();
     private:
 };
