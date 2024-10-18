@@ -1,7 +1,13 @@
 #include "NanoShader.hpp"
 #include "NanoError.hpp"
 #include "NanoLogger.hpp"
+
+#ifdef _WIN64
 #include <windows.h>
+#elif __APPLE__
+#include <unistd.h>
+#endif
+
 #include <fstream>
 
 void NanoShader::CleanUp(){
@@ -28,8 +34,10 @@ static VkShaderModule CreateShaderModule(VkDevice& device, NanoShader& shader) {
   return shaderModule;
 }
 
-int RunGLSLCompiler(LPCTSTR lpApplicationName, char const* argv[], const char* shaderName)
+#ifdef _WIN64
+int RunGLSLCompiler(const char* lpApplicationName, char const* argv[], const char* shaderName)
 {
+   LPCTSTR executable = lpApplicationName;
    // additional information
    STARTUPINFO si;
    PROCESS_INFORMATION pi;
@@ -40,7 +48,7 @@ int RunGLSLCompiler(LPCTSTR lpApplicationName, char const* argv[], const char* s
    ZeroMemory( &pi, sizeof(pi) );
 
   // start the program up
-  bool test = CreateProcess( lpApplicationName,   // the path
+  bool test = CreateProcess( executable,   // the path
     const_cast<char*>(argv[0]),           // Command line
     NULL,           // Process handle not inheritable
     NULL,           // Thread handle not inheritable
@@ -68,6 +76,37 @@ int RunGLSLCompiler(LPCTSTR lpApplicationName, char const* argv[], const char* s
 
   return compilerExitCode;
 }
+#elif __APPLE__
+int RunGLSLCompiler(const char* lpApplicationName, char const* fileName, const char* outputFileName, const char* shaderName)
+{
+  int err = 0;
+  int status;
+  pid_t pid;
+
+  LOG_MSG(ERRLevel::INFO, "compiling : %s", shaderName);
+
+  pid = fork();
+  if(pid == -1){
+    fprintf(stderr, "error pid\n");
+    exit(EXIT_FAILURE);
+  }else if(pid == 0){
+    err = execl(lpApplicationName, "", fileName, "-o", outputFileName, (char *)0);
+    LOG_MSG(ERRLevel::INFO, "finished compiling: %s\t with exit code: %d", shaderName, err);
+    exit(0);
+  }else{
+    if(waitpid(pid, &status, 0) > 0){
+      if (WIFEXITED(status) && !WEXITSTATUS(status) && WEXITSTATUS(status) != 127){
+        //LOG_MSG(ERRLevel::INFO, "glslc ran with no issues");
+      } else{
+        LOG_MSG(ERRLevel::INFO, "glslc exit with error");
+      }
+    } else {
+        LOG_MSG(ERRLevel::FATAL, "error occured with waitpid");
+    }
+  }
+  return err;
+}
+#endif
 
 static std::vector<char> ReadBinaryFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -116,9 +155,9 @@ int NanoShader::Compile(bool forceCompile){
     cmdArgument.append(" -o ");
     cmdArgument.append(outputFile);
 
-    char const *argv[] = {cmdArgument.c_str()};
-    LPCTSTR executable = "./external/VULKAN/win/glslc.exe";
-    exitCode = RunGLSLCompiler(executable, argv, m_fileFullPath.substr(startIndx).c_str());
+    char const *argv[] = {m_fileFullPath.c_str(), "-o", outputFile.c_str()};
+    const char* executable = "./external/VULKAN/mac/glslc";
+    exitCode = RunGLSLCompiler(executable, m_fileFullPath.c_str(), outputFile.c_str(), m_fileFullPath.substr(startIndx).c_str());
 
     if(!exitCode){
       LOG_MSG(ERRLevel::INFO, "Successfully compiled")

@@ -232,11 +232,18 @@ static std::vector<const char *> getRequiredInstanceExtensions() {
 
     // additional instance extension we may want to add
     std::vector<const char *> instanceExtensions;
+    int extIdx = 0;
+    while (Config::desiredInstanceExtensions[extIdx]) {
+        instanceExtensions.emplace_back(Config::desiredInstanceExtensions[extIdx]);
+        extIdx++;
+    }
+
     for (uint32_t i = 0; i < glfwExtensionCount; i++) {
         instanceExtensions.emplace_back(glfwExtensions[i]);
     }
-#if MACOS
+#if __APPLE__
     instanceExtensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    instanceExtensions.emplace_back("VK_KHR_get_physical_device_properties2");
 #endif
 
     if (Config::enableValidationLayers) {
@@ -284,7 +291,7 @@ static ERR createInstance(const char *applicationName, const char *engineName, V
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-#if MACOS
+#if __APPLE__
     createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 #endif
 
@@ -365,8 +372,8 @@ ERR checkDeviceExtensionSupport(VkPhysicalDevice device) {
 
     std::set<std::string> requiredExtensions{};
     int extIdx = 0;
-    while (Config::deviceExtensions[extIdx]) {
-        requiredExtensions.emplace(std::string(Config::deviceExtensions[extIdx]));
+    while (Config::desiredDeviceExtensions[extIdx]) {
+        requiredExtensions.emplace(std::string(Config::desiredDeviceExtensions[extIdx]));
         extIdx++;
     }
 
@@ -389,7 +396,7 @@ int rateDeviceSuitability(const VkPhysicalDevice &device, const VkSurfaceKHR &su
     int score = 0;
 
     // Discrete GPUs have a significant performance advantage
-    if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+    if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ){
         score += 1000;
     }
 
@@ -398,12 +405,17 @@ int rateDeviceSuitability(const VkPhysicalDevice &device, const VkSurfaceKHR &su
 
     // Application can't function without geometry shaders
     if (!deviceFeatures.geometryShader) {
-        return 0;
+        fprintf(stderr, "No Geometry shader support found\n");
+    }
+
+    if (!deviceFeatures.tessellationShader) {
+        fprintf(stderr, "No Tesselation shader support found\n");
     }
 
     // Application can't function without the required device extensions
     bool extensionsSupported = ERR::OK == checkDeviceExtensionSupport(device);
     if (!extensionsSupported) {
+        fprintf(stderr, "missing extensions. score = 0\n");
         return 0;
     }
 
@@ -412,11 +424,13 @@ int rateDeviceSuitability(const VkPhysicalDevice &device, const VkSurfaceKHR &su
         SwapChainDetails swapChainSupport = querySwapChainSupport(device, surface);
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         if (!swapChainAdequate) {
+            fprintf(stderr, "swapchain not adequate. score = 0\n");
             return 0; // Application can't function without an adequate swapchain extensions
         }
     }
 
     if (ERR::NOT_FOUND == findQueueFamilies(device, queueIndices)) {
+        fprintf(stderr, "queue family not found. score = 0\n");
         return 0;
     }
 
@@ -431,6 +445,7 @@ static ERR pickPhysicalDevice(const VkInstance &instance, const VkSurfaceKHR &su
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(_NanoContext.instance, &deviceCount, nullptr);
 
+    fprintf(stderr, "Number of device found %d\n", deviceCount);
     if (deviceCount == 0) {
         throw std::runtime_error("failed to find GPUs with Vulkan support!");
     }
@@ -465,22 +480,22 @@ static ERR pickPhysicalDevice(const VkInstance &instance, const VkSurfaceKHR &su
         char deviceType[256] = {0};
         switch (deviceProperties.deviceType) {
         case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
-            strcpy_s(deviceType, "DESCRETE GPU");
+            strcpy(deviceType, "DESCRETE GPU");
             break;
         case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
-            strcpy_s(deviceType, "INTEGRATED GPU");
+            strcpy(deviceType, "INTEGRATED GPU");
             break;
         case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
-            strcpy_s(deviceType, "VIRTUAL GPU");
+            strcpy(deviceType, "VIRTUAL GPU");
             break;
         case VK_PHYSICAL_DEVICE_TYPE_CPU:
-            strcpy_s(deviceType, "CPU");
+            strcpy(deviceType, "CPU");
             break;
         case VK_PHYSICAL_DEVICE_TYPE_OTHER:
-            strcpy_s(deviceType, "OTHER");
+            strcpy(deviceType, "OTHER");
             break;
         default:
-            strcpy_s(deviceType, "UNKNOWN");
+            strcpy(deviceType, "UNKNOWN");
         }
         LOG_MSG(ERRLevel::INFO, "Physical device selected: %s [%s]", deviceProperties.deviceName, deviceType);
     }
@@ -520,8 +535,8 @@ ERR createLogicalDevice(VkPhysicalDevice &physicalDevice, QueueFamilyIndices &in
     VkPhysicalDeviceFeatures deviceFeatures{}; // defaults all the features to false for now
     createInfo.pEnabledFeatures = &deviceFeatures;
 
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(Utility::SizeOf(Config::desiredValidationLayers));
-    createInfo.ppEnabledExtensionNames = Config::deviceExtensions;
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(Utility::SizeOf(Config::desiredDeviceExtensions));
+    createInfo.ppEnabledExtensionNames = Config::desiredDeviceExtensions;
     if (Config::enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(Utility::SizeOf(Config::desiredValidationLayers));
         createInfo.ppEnabledLayerNames = Config::desiredValidationLayers;

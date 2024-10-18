@@ -2,7 +2,6 @@
 #define NANOCONFIG_H_
 
 #include <cstdint>
-#include <vector>
 #include <vulkan/vulkan_core.h>
 
 namespace Config {
@@ -22,8 +21,15 @@ constexpr const char *desiredValidationLayers[] = {
     NULL // to allow for while loops without crash
 };
 
-constexpr const char *deviceExtensions[] = {
+constexpr const char *desiredDeviceExtensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    "VK_KHR_portability_subset",
+    NULL // to allow for while loops without crash
+};
+
+constexpr const char *desiredInstanceExtensions[] = {
+    VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
+    "VK_KHR_get_physical_device_properties2",
     NULL // to allow for while loops without crash
 };
 } // namespace Config
