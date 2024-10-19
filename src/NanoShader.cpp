@@ -35,12 +35,17 @@ static VkShaderModule CreateShaderModule(VkDevice& device, NanoShader& shader) {
 }
 
 #ifdef _WIN64
-int RunGLSLCompiler(const char* lpApplicationName, char const* argv[], const char* shaderName)
+int RunGLSLCompiler(const char* lpApplicationName, char const* fileName, const char* outputFileName, const char* shaderName)
 {
    LPCTSTR executable = lpApplicationName;
    // additional information
    STARTUPINFO si;
    PROCESS_INFORMATION pi;
+
+   std::string command = "glslc ";
+   command.append(fileName);
+   command.append(" -o ");
+   command.append(outputFileName);
 
    // set the size of the structures
    ZeroMemory( &si, sizeof(si) );
@@ -49,7 +54,7 @@ int RunGLSLCompiler(const char* lpApplicationName, char const* argv[], const cha
 
   // start the program up
   bool test = CreateProcess( executable,   // the path
-    const_cast<char*>(argv[0]),           // Command line
+    const_cast<char*>(command.c_str()),           // Command line
     NULL,           // Process handle not inheritable
     NULL,           // Thread handle not inheritable
     FALSE,          // Set handle inheritance to FALSE
@@ -156,7 +161,13 @@ int NanoShader::Compile(bool forceCompile){
     cmdArgument.append(outputFile);
 
     char const *argv[] = {m_fileFullPath.c_str(), "-o", outputFile.c_str()};
+#ifdef __APPLE__
     const char* executable = "./external/VULKAN/mac/glslc";
+#elif _WIN32
+    const char* executable = "./external/VULKAN/win/glslc.exe";
+#else
+    const char* executable = "./external/VULKAN/linux/glslc";
+#endif
     exitCode = RunGLSLCompiler(executable, m_fileFullPath.c_str(), outputFile.c_str(), m_fileFullPath.substr(startIndx).c_str());
 
     if(!exitCode){

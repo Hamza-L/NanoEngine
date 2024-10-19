@@ -75,6 +75,10 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     set(ADDITIONAL_LIBRARY_DEPENDENCIES
         "glfw3.lib"
         "vulkan-1.lib")
+
+    #only remove deprecation warning for NanoGraphics (no warning for using strcpy_s)
+    set_source_files_properties("src/NanoGraphics.cpp" PROPERTIES COMPILE_FLAGS -Wno-deprecated-declarations)
+
 elseif(APPLE)
     message("Starting the Macos Build")
 

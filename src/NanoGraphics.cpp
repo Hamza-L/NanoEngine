@@ -20,6 +20,8 @@
 #include <set>
 #include <vector>
 
+#define _CRT_SECURE_NO_WARNINGS
+
 struct QueueFamilyIndices {
     int32_t graphicsFamily = -1;
     int32_t presentFamily = -1;
@@ -241,10 +243,6 @@ static std::vector<const char *> getRequiredInstanceExtensions() {
     for (uint32_t i = 0; i < glfwExtensionCount; i++) {
         instanceExtensions.emplace_back(glfwExtensions[i]);
     }
-#if __APPLE__
-    instanceExtensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-    instanceExtensions.emplace_back("VK_KHR_get_physical_device_properties2");
-#endif
 
     if (Config::enableValidationLayers) {
         instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
