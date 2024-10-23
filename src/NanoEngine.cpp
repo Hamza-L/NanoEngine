@@ -6,8 +6,8 @@ NanoEngine::~NanoEngine(){
 
 ERR NanoEngine::CleanUp(){
     ERR err = ERR::OK;
-    m_NanoGraphics.CleanUp();
     m_NanoWindow.CleanUp();
+    m_NanoGraphics.CleanUp();
     return err;
 }
 

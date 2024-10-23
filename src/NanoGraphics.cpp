@@ -45,6 +45,12 @@ struct SwapChainDetails {
     uint32_t imageCount;
 };
 
+struct SyncObjects {
+    VkSemaphore imageAvailableSemaphore{};
+    VkSemaphore renderFinishedSemaphore{};
+    VkFence inFlightFence{};
+};
+
 struct NanoVKContext {
     VkInstance instance{};
     VkPhysicalDevice physicalDevice{};
@@ -65,12 +71,17 @@ struct NanoVKContext {
     VkRenderPass renderpass{};
 
     std::vector<NanoGraphicsPipeline> graphicsPipelines{};
+    NanoGraphicsPipeline* currentGraphicsPipeline{};
 
     VkCommandPool commandPool{};
     VkCommandBuffer commandBuffer{};
 
+    SyncObjects syncbObjects{};
+
     void AddGraphicsPipeline(const NanoGraphicsPipeline& graphicsPipeline){
         graphicsPipelines.push_back(std::move(graphicsPipeline));
+        //for now use the last graphics pipeline we added as the current pipeline
+        currentGraphicsPipeline = &graphicsPipelines.back();
     }
 } _NanoContext;
 
@@ -145,6 +156,10 @@ static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT 
 
 ERR NanoGraphics::CleanUp() {
     ERR err = ERR::OK;
+    vkDeviceWaitIdle(_NanoContext.device);
+    vkDestroySemaphore(_NanoContext.device, _NanoContext.syncbObjects.imageAvailableSemaphore, nullptr);
+    vkDestroySemaphore(_NanoContext.device, _NanoContext.syncbObjects.renderFinishedSemaphore, nullptr);
+    vkDestroyFence(_NanoContext.device, _NanoContext.syncbObjects.inFlightFence, nullptr);
 
     vkDestroyCommandPool(_NanoContext.device, _NanoContext.commandPool, nullptr);
 
@@ -737,12 +752,23 @@ ERR createRenderPass(VkDevice& device, const SwapChainDetails& swapChainDetails,
     subpass.pColorAttachments = &colorAttachmentRef; // always add the reference to the attachment and never the attachment itself
     // The index of the attachment in this array is directly referenced from the fragment shader with the layout(location = 0) out vec4 outColor directive!
 
+    // subpass synchronization with swapchain images state
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0; //The dstSubpass is our one and only subpass (for now). it must always be higher than srcSubpass to prevent cycles in the dependency graph (unless one of the subpasses is VK_SUBPASS_EXTERNAL)
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = 1;
     renderPassInfo.pAttachments = &colorAttachment;
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
 
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderpass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
@@ -806,7 +832,7 @@ ERR createCommandBuffer(VkDevice& device, const VkCommandPool& commandPool, VkCo
     return err;
 }
 
-ERR recordCommandBuffer(NanoGraphicsPipeline& graphicsPipeline, const VkRenderPass& renderPass, const SwapChainDetails swapChainDetails, std::vector<VkFramebuffer>& swapChainFrameBuffers, VkCommandBuffer& commandBuffer, uint32_t imageIndex) {
+ERR recordCommandBuffer(NanoGraphicsPipeline& graphicsPipeline, VkFramebuffer& swapChainFrameBufferToWriteTo, VkCommandBuffer& commandBuffer) {
     ERR err = ERR::OK;
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -820,17 +846,16 @@ ERR recordCommandBuffer(NanoGraphicsPipeline& graphicsPipeline, const VkRenderPa
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = swapChainFrameBuffers[imageIndex];
+    renderPassInfo.renderPass = graphicsPipeline.GetRenderPass();
+    renderPassInfo.framebuffer = swapChainFrameBufferToWriteTo;
 
     renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapChainDetails.currentExtent;
+    renderPassInfo.renderArea.extent = graphicsPipeline.GetExtent();
 
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    VkClearValue clearColor = {{{0.02f, 0.02f, 0.02f, 1.0f}}};
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
 
-    {
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.GetPipeline());
@@ -839,24 +864,45 @@ ERR recordCommandBuffer(NanoGraphicsPipeline& graphicsPipeline, const VkRenderPa
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = static_cast<float>(swapChainDetails.currentExtent.width);
-        viewport.height = static_cast<float>(swapChainDetails.currentExtent.height);
+        viewport.width = static_cast<float>(graphicsPipeline.GetExtent().width);
+        viewport.height = static_cast<float>(graphicsPipeline.GetExtent().height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
         VkRect2D scissor{};
         scissor.offset = {0, 0};
-        scissor.extent = swapChainDetails.currentExtent;
+        scissor.extent = graphicsPipeline.GetExtent();
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
-    }
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");
+    }
+
+    return err;
+}
+
+ERR createSyncObjects(VkDevice& device ,SyncObjects& syncbObjects){
+    ERR err = ERR::OK;
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // we create it at a signaled state so we don't bloack at the very first frame.
+
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &syncbObjects.imageAvailableSemaphore) != VK_SUCCESS ||
+        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &syncbObjects.renderFinishedSemaphore) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create semaphores!");
+    }
+
+    if (vkCreateFence(device, &fenceInfo, nullptr, &syncbObjects.inFlightFence)) {
+        throw std::runtime_error("failed to create frences!");
     }
 
     return err;
@@ -927,10 +973,54 @@ ERR NanoGraphics::Init(NanoWindow &window) {
                               _NanoContext.commandPool,
                               _NanoContext.commandBuffer);
 
+    err = createSyncObjects(_NanoContext.device,
+                            _NanoContext.syncbObjects);
+
     return err;
 }
 
 ERR NanoGraphics::DrawFrame(){
     ERR err = ERR::OK;
+    vkWaitForFences(_NanoContext.device, 1, &_NanoContext.syncbObjects.inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(_NanoContext.device, 1, &_NanoContext.syncbObjects.inFlightFence);
+
+    uint32_t imageIndex;
+    vkAcquireNextImageKHR(_NanoContext.device, _NanoContext.swapchain, UINT64_MAX, _NanoContext.syncbObjects.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+    vkResetCommandBuffer(_NanoContext.commandBuffer, 0);
+
+    recordCommandBuffer(*_NanoContext.currentGraphicsPipeline,
+                        _NanoContext.swapChainFramebuffers[imageIndex], //swapchain framebuffer for the command buffer to operate on
+                        _NanoContext.commandBuffer); //command buffer to write to.
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    VkSemaphore waitSemaphores[] = {_NanoContext.syncbObjects.imageAvailableSemaphore};
+    VkSemaphore signalSemaphores[] = {_NanoContext.syncbObjects.renderFinishedSemaphore};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &_NanoContext.commandBuffer;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+
+    if (vkQueueSubmit(_NanoContext.graphicsQueue, 1, &submitInfo, _NanoContext.syncbObjects.inFlightFence) != VK_SUCCESS) {
+        throw std::runtime_error("failed to submit draw command buffer!");
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+    VkSwapchainKHR swapChains[] = {_NanoContext.swapchain};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pResults = nullptr; // Optional
+
+    vkQueuePresentKHR(_NanoContext.presentQueue, &presentInfo);
+
     return err;
 }

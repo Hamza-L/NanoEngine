@@ -173,6 +173,7 @@ int NanoShader::Compile(bool forceCompile){
     if(!exitCode){
       LOG_MSG(ERRLevel::INFO, "Successfully compiled")
       m_isCompiled = true;
+      LOG_MSG(ERRLevel::INFO, "reading raw shader code from: %s", outputFile.c_str());
       m_rawShaderCode = ReadBinaryFile(outputFile);
       m_shaderModule = CreateShaderModule(_device, *this);
     } else {
