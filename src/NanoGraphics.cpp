@@ -46,7 +46,7 @@ struct SwapChainDetails {
     uint32_t imageCount;
 };
 
-struct SyncObjects {
+struct SwapchainSyncObjects {
     VkSemaphore imageAvailableSemaphore{};
     VkSemaphore renderFinishedSemaphore{};
     VkFence inFlightFence{};
@@ -77,7 +77,7 @@ struct NanoVKContext {
     VkCommandPool commandPool{};
     VkCommandBuffer commandBuffer{};
 
-    SyncObjects syncbObjects{};
+    SwapchainSyncObjects swapchainSyncObjects{};
 
     void AddGraphicsPipeline(const NanoGraphicsPipeline& graphicsPipeline){
         graphicsPipelines.push_back(std::move(graphicsPipeline));
@@ -157,10 +157,6 @@ static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT 
 
 ERR NanoGraphics::CleanUp() {
     ERR err = ERR::OK;
-    vkDeviceWaitIdle(_NanoContext.device);
-    vkDestroySemaphore(_NanoContext.device, _NanoContext.syncbObjects.imageAvailableSemaphore, nullptr);
-    vkDestroySemaphore(_NanoContext.device, _NanoContext.syncbObjects.renderFinishedSemaphore, nullptr);
-    vkDestroyFence(_NanoContext.device, _NanoContext.syncbObjects.inFlightFence, nullptr);
 
     vkDeviceWaitIdle(_NanoContext.device);
     vkDestroySemaphore(_NanoContext.device, _NanoContext.swapchainSyncObjects.imageAvailableSemaphore, nullptr);
@@ -893,7 +889,7 @@ ERR recordCommandBuffer(NanoGraphicsPipeline& graphicsPipeline, VkFramebuffer& s
     return err;
 }
 
-ERR createSyncObjects(VkDevice& device ,SyncObjects& syncbObjects){
+ERR createSwapchainSyncObjects(VkDevice& device ,SwapchainSyncObjects& syncbObjects){
     ERR err = ERR::OK;
 
     VkSemaphoreCreateInfo semaphoreInfo{};
@@ -980,19 +976,19 @@ ERR NanoGraphics::Init(NanoWindow &window) {
                               _NanoContext.commandPool,
                               _NanoContext.commandBuffer);
 
-    err = createSyncObjects(_NanoContext.device,
-                            _NanoContext.syncbObjects);
+    err = createSwapchainSyncObjects(_NanoContext.device,
+                            _NanoContext.swapchainSyncObjects);
 
     return err;
 }
 
 ERR NanoGraphics::DrawFrame(){
     ERR err = ERR::OK;
-    vkWaitForFences(_NanoContext.device, 1, &_NanoContext.syncbObjects.inFlightFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(_NanoContext.device, 1, &_NanoContext.syncbObjects.inFlightFence);
+    vkWaitForFences(_NanoContext.device, 1, &_NanoContext.swapchainSyncObjects.inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(_NanoContext.device, 1, &_NanoContext.swapchainSyncObjects.inFlightFence);
 
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(_NanoContext.device, _NanoContext.swapchain, UINT64_MAX, _NanoContext.syncbObjects.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+    vkAcquireNextImageKHR(_NanoContext.device, _NanoContext.swapchain, UINT64_MAX, _NanoContext.swapchainSyncObjects.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 
     vkResetCommandBuffer(_NanoContext.commandBuffer, 0);
 
@@ -1002,8 +998,8 @@ ERR NanoGraphics::DrawFrame(){
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    VkSemaphore waitSemaphores[] = {_NanoContext.syncbObjects.imageAvailableSemaphore};
-    VkSemaphore signalSemaphores[] = {_NanoContext.syncbObjects.renderFinishedSemaphore};
+    VkSemaphore waitSemaphores[] = {_NanoContext.swapchainSyncObjects.imageAvailableSemaphore};
+    VkSemaphore signalSemaphores[] = {_NanoContext.swapchainSyncObjects.renderFinishedSemaphore};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &_NanoContext.commandBuffer;
@@ -1013,7 +1009,7 @@ ERR NanoGraphics::DrawFrame(){
     submitInfo.pSignalSemaphores = signalSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
 
-    if (vkQueueSubmit(_NanoContext.graphicsQueue, 1, &submitInfo, _NanoContext.syncbObjects.inFlightFence) != VK_SUCCESS) {
+    if (vkQueueSubmit(_NanoContext.graphicsQueue, 1, &submitInfo, _NanoContext.swapchainSyncObjects.inFlightFence) != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
 
