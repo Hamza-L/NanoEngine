@@ -13,9 +13,10 @@ class NanoGraphicsPipeline{
         void ConfigureViewport(const VkExtent2D& extent);
         ERR Compile(bool forceReCompile = false);
         void CleanUp();
-        VkExtent2D& GetExtent(){return m_extent;}
+
         VkPipeline& GetPipeline(){return m_pipeline;}
-        VkRenderPass& GetRenderpass(){return _renderpass;}
+        VkRenderPass& GetRenderPass(){return _renderpass;}
+        VkExtent2D& GetExtent(){return m_extent;}
     private:
         VkDevice _device = {};
         VkRenderPass _renderpass = {};
