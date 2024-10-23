@@ -150,6 +150,7 @@ ERR NanoGraphicsPipeline::Compile(bool forceReCompile){
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_TRUE;
     colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
     colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
@@ -188,7 +189,6 @@ ERR NanoGraphicsPipeline::Compile(bool forceReCompile){
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.stageCount = 2;
     pipelineInfo.pStages = shaderStages;
-
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
@@ -197,7 +197,6 @@ ERR NanoGraphicsPipeline::Compile(bool forceReCompile){
     pipelineInfo.pDepthStencilState = nullptr; // Optional
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
-
     pipelineInfo.layout = m_pipelineLayout;
     pipelineInfo.renderPass = _renderpass;
     pipelineInfo.subpass = 0; // subpass to use

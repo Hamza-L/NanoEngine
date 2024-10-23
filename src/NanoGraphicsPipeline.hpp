@@ -2,6 +2,7 @@
 #define NANOGRAPHICSPIPELINE_H_
 
 #include "NanoShader.hpp"
+#include "vulkan/vulkan_core.h"
 
 class NanoGraphicsPipeline{
     public:
@@ -12,7 +13,9 @@ class NanoGraphicsPipeline{
         void ConfigureViewport(const VkExtent2D& extent);
         ERR Compile(bool forceReCompile = false);
         void CleanUp();
+        VkExtent2D& GetExtent(){return m_extent;}
         VkPipeline& GetPipeline(){return m_pipeline;}
+        VkRenderPass& GetRenderpass(){return _renderpass;}
     private:
         VkDevice _device = {};
         VkRenderPass _renderpass = {};
