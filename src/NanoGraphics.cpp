@@ -460,7 +460,6 @@ static ERR pickPhysicalDevice(const VkInstance &instance, const VkSurfaceKHR &su
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(_NanoContext.instance, &deviceCount, nullptr);
 
-    fprintf(stderr, "Number of device found %d\n", deviceCount);
     if (deviceCount == 0) {
         throw std::runtime_error("failed to find GPUs with Vulkan support!");
     }
@@ -889,7 +888,7 @@ ERR recordCommandBuffer(NanoGraphicsPipeline& graphicsPipeline, VkFramebuffer& s
     return err;
 }
 
-ERR createSwapchainSyncObjects(VkDevice& device ,SwapchainSyncObjects& syncbObjects){
+ERR createSwapchainSyncObjects(VkDevice& device ,SwapchainSyncObjects& syncObjects){
     ERR err = ERR::OK;
 
     VkSemaphoreCreateInfo semaphoreInfo{};
@@ -899,12 +898,12 @@ ERR createSwapchainSyncObjects(VkDevice& device ,SwapchainSyncObjects& syncbObje
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // we create it at a signaled state so we don't bloack at the very first frame.
 
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &syncbObjects.imageAvailableSemaphore) != VK_SUCCESS ||
-        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &syncbObjects.renderFinishedSemaphore) != VK_SUCCESS) {
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &syncObjects.imageAvailableSemaphore) != VK_SUCCESS ||
+        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &syncObjects.renderFinishedSemaphore) != VK_SUCCESS) {
         throw std::runtime_error("failed to create semaphores!");
     }
 
-    if (vkCreateFence(device, &fenceInfo, nullptr, &syncbObjects.inFlightFence)) {
+    if (vkCreateFence(device, &fenceInfo, nullptr, &syncObjects.inFlightFence)) {
         throw std::runtime_error("failed to create frences!");
     }
 

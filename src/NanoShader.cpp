@@ -66,7 +66,7 @@ int RunGLSLCompiler(const char* lpApplicationName, char const* fileName, const c
     );
 
   // Wait until child process exits.
-  LOG_MSG(ERRLevel::INFO, "compiling : %s", shaderName);
+  LOG_MSG(ERRLevel::INFO, "compiling : %s", fileName);
   WaitForSingleObject( pi.hProcess, INFINITE );
 
   DWORD exit_code;
