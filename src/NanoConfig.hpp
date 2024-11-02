@@ -9,6 +9,8 @@ constexpr uint16_t WINDOW_WIDTH = 800;
 constexpr uint16_t WINDOW_HEIGHT = 600;
 constexpr const char *APP_NAME = "NanoApplication";
 constexpr const char *ENGINE_NAME = "NanoEngine";
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
